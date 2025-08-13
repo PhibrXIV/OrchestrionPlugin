@@ -56,16 +56,27 @@ public static class BGMManager
         if (playedByOrch) _ipcManager.InvokeOrchSongChanged(newSong);
     }
 
+    private static long _lastLocalAudibleTick;
+
     public static void Update(IFramework _)
     {
         _bgmController.Update();
 
-        // Keep local player's volume synced to in-game settings (master * BGM * mutes, if you compute it).
+        // Keep local player's volume synced to in-game settings.
         LocalAudioPlayer.ApplyGameVolume();
 
-        // Safety: if local playback ended without calling our stop hook, release silence.
+        // Track when local audio was last definitely audible.
+        if (LocalAudioPlayer.IsPlaying)
+            _lastLocalAudibleTick = Environment.TickCount64;
+
+        // Safety: only release silence if local audio has been stopped for a short while,
+        // to avoid dropping silence during crossfades or loop boundaries.
+        const int GraceMs = 750;
         if (_silencedViaExternal && !LocalAudioPlayer.IsPlaying)
-            EndExternalSilence();
+        {
+            if (Environment.TickCount64 - _lastLocalAudibleTick > GraceMs)
+                EndExternalSilence();
+        }
     }
 
     private static void HandleSongChanged(int oldSong, int newSong, int oldSecondSong, int newSecondSong)

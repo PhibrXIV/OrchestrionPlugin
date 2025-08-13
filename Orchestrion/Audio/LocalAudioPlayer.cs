@@ -6,10 +6,6 @@ using NAudio.Wave;
 
 namespace Orchestrion.Audio;
 
-/// <summary>
-/// Minimal local audio player with smooth fade in/out and crossfade support,
-/// plus a base "game volume" multiplier that mirrors the in-game Master×BGM levels.
-/// </summary>
 public static class LocalAudioPlayer
 {
     private static readonly object _gate = new();
@@ -21,6 +17,10 @@ public static class LocalAudioPlayer
     private static float _fadeGain = 1f;       // 0..1, controlled by fades
     private static float _baseGameVolume = 1f; // 0..1, mirrors in-game (master * BGM * mutes)
     private static CancellationTokenSource? _fadeCts;
+
+    // Looping + control flags
+    private static bool _loopEnabled = true;
+    private static bool _stopRequested = false;
 
     // Gentler defaults
     private const int DefaultFadeOutMs = 4000;
@@ -35,23 +35,15 @@ public static class LocalAudioPlayer
     public static TimeSpan Position
         => _reader?.CurrentTime ?? TimeSpan.Zero;
 
-    /// <summary>
-    /// Apply the last set base/game volume. Call when you update it externally.
-    /// </summary>
-    public static void ApplyGameVolume()
+    /// <summary>Enable/disable automatic looping of the current track (default: true).</summary>
+    public static void SetLoopEnabled(bool enabled)
     {
-        UpdateOutputVolume();
+        _loopEnabled = enabled;
     }
 
-    /// <summary>
-    /// Convenience overload for callers that pass the base game volume (0..1).
-    /// </summary>
-    public static void ApplyGameVolume(float baseVolume01)
-    {
-        SetBaseVolume(baseVolume01);
-    }
+    public static void ApplyGameVolume() => UpdateOutputVolume();
+    public static void ApplyGameVolume(float baseVolume01) => SetBaseVolume(baseVolume01);
 
-    /// <summary>Directly set the base/game volume (0..1).</summary>
     public static void SetBaseVolume(float v01)
     {
         lock (_gate)
@@ -61,30 +53,17 @@ public static class LocalAudioPlayer
         }
     }
 
-    /// <summary>
-    /// Start playback of a file with optional fades (defaults tuned for subtle starts).
-    /// </summary>
     public static void PlayFile(string path, int fadeOutMs = DefaultFadeOutMs, int fadeInMs = DefaultFadeInMs)
         => _ = TransitionToAsync(path, fadeOutMs, fadeInMs);
 
-    /// <summary>
-    /// Crossfade from the current file to a new one.
-    /// </summary>
     public static Task CrossfadeToFile(string path, int fadeOutMs = DefaultFadeOutMs, int fadeInMs = DefaultFadeInMs)
         => TransitionToAsync(path, fadeOutMs, fadeInMs);
 
-    /// <summary>
-    /// Back-compat wrapper (older code called LocalAudioPlayer.Play).
-    /// </summary>
+    // Back-compat wrappers
     public static void Play(string path) => PlayFile(path, DefaultFadeOutMs, DefaultFadeInMs);
-
-    /// <summary>
-    /// Back-compat wrapper with explicit fade timings.
-    /// </summary>
     public static void Play(string path, int fadeOutMs, int fadeInMs) => PlayFile(path, fadeOutMs, fadeInMs);
 
-    public static void Stop()
-        => _ = StopAsync(DefaultFadeOutMs);
+    public static void Stop() => _ = StopAsync(DefaultFadeOutMs);
 
     public static async Task StopAsync(int fadeOutMs = DefaultFadeOutMs)
     {
@@ -94,6 +73,7 @@ public static class LocalAudioPlayer
             CancelFade_NoLock();
             if (_output is not null)
             {
+                _stopRequested = true;
                 var cts = NewFadeCts();
                 await FadeToAsync(0f, fadeOutMs, cts.Token).ConfigureAwait(false);
             }
@@ -115,11 +95,15 @@ public static class LocalAudioPlayer
         await _transitionLock.WaitAsync().ConfigureAwait(false);
         try
         {
+            // Hold the game in "external silence" for the whole transition.
+            using var _ = LocalPlaybackHooks.AcquireSilenceHold();
+
             CancelFade_NoLock();
 
             // Fade out current
             if (_output is not null)
             {
+                _stopRequested = true;
                 var ctsOut = NewFadeCts();
                 await FadeToAsync(0f, fadeOutMs, ctsOut.Token).ConfigureAwait(false);
             }
@@ -147,13 +131,22 @@ public static class LocalAudioPlayer
             Volume = 0f // fade will raise it
         };
         _output = new WaveOutEvent();
+        _output.PlaybackStopped += OnPlaybackStopped;
         _output.Init(_reader);
+        _stopRequested = false; // fresh start, not an intentional stop
         _output.Play();
         UpdateOutputVolume();
     }
 
     private static void InternalStop_NoLock()
     {
+        try
+        {
+            if (_output is not null)
+                _output.PlaybackStopped -= OnPlaybackStopped;
+        }
+        catch { /* ignore */ }
+
         try { _output?.Stop(); } catch { /* ignore */ }
         _output?.Dispose();
         _reader?.Dispose();
@@ -161,6 +154,23 @@ public static class LocalAudioPlayer
         _reader = null;
         _fadeGain = 1f;
         UpdateOutputVolume();
+    }
+
+    private static void OnPlaybackStopped(object? sender, StoppedEventArgs e)
+    {
+        // Natural end? Loop if enabled. Do not loop if we intentionally stopped (during fade/crossfade).
+        if (!_stopRequested && _loopEnabled && _reader is not null && _output is not null)
+        {
+            try
+            {
+                _reader.Position = 0;
+                _output.Play();
+            }
+            catch
+            {
+                // If restart fails, fall through — safety will release silence soon after.
+            }
+        }
     }
 
     private static async Task FadeToAsync(float target, int ms, CancellationToken ct)
@@ -181,7 +191,6 @@ public static class LocalAudioPlayer
         {
             ct.ThrowIfCancellationRequested();
             var t = i / (float)steps;
-            // Cosine easing for a nicer curve.
             var eased = (float)((1 - Math.Cos(t * Math.PI)) / 2.0);
             _fadeGain = start + delta * eased;
             UpdateOutputVolume();
