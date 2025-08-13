@@ -52,7 +52,7 @@ public class OrchestrionPlugin : IDalamudPlugin
         BGMAddressResolver.Init();
 
         // >>> ADDED: keep local playback volume in sync with in-game Master×BGM
-        GameVolumeSync.Initialize();
+        GameVolume.Initialize(DalamudApi.Framework);
         // <<< ADDED
 
         BGMManager.OnSongChanged += OnSongChanged;
@@ -126,7 +126,7 @@ public class OrchestrionPlugin : IDalamudPlugin
         _dtrEntry?.Remove();
 
         // >>> ADDED: tear down volume sync
-        GameVolumeSync.Dispose();
+        GameVolume.Dispose();
         // <<< ADDED
 
         PlaylistManager.Dispose();
@@ -424,46 +424,77 @@ public class OrchestrionPlugin : IDalamudPlugin
     }
 
     private void UpdateDtr(int songId, bool playedByOrch = false)
+{
+    if (_dtrEntry == null) return;
+
+    var lang = Configuration.Instance.ServerInfoLanguageCode;
+
+    // Underlying game BGM (fallback to our tracked value if CurrentSongId hasn't populated yet)
+    var underlyingId = Orchestrion.Audio.BGMManager.CurrentSongId;
+    if (underlyingId == 0 && Orchestrion.Audio.BGMManager.ActiveLocalTargetId != 0)
+        underlyingId = Orchestrion.Audio.BGMManager.ActiveLocalTargetId;
+
+    // If the underlying has a LOCAL replacement configured, prefer showing the local file name.
+    if (underlyingId != 0 &&
+        Configuration.Instance.SongReplacements.TryGetValue(underlyingId, out var rep) &&
+        rep.IsLocal)
     {
-        if (_dtrEntry == null) return;
-        if (!SongList.Instance.TryGetSong(songId, out var song)) return;
-        var songName = song.Strings[Configuration.Instance.ServerInfoLanguageCode].Name;
-        var locations = song.Strings[Configuration.Instance.ServerInfoLanguageCode].Locations;
-        var info = song.Strings[Configuration.Instance.ServerInfoLanguageCode].AdditionalInfo;
-        if (string.IsNullOrEmpty(songName)) return;
+        var localName = Path.GetFileNameWithoutExtension(rep.LocalPath)?.Trim();
+        if (string.IsNullOrEmpty(localName))
+            localName = "Local track";
 
-        var suffix = "";
-        if (Configuration.Instance.ShowIdInNative)
+
+            var left = playedByOrch ? "[" : string.Empty;
+        var right = playedByOrch ? "]" : string.Empty;
+        _dtrEntry.Text = $"{NativeNowPlayingPrefix}{left}{localName}{right}";
+
+        // Tooltip: what are we replacing?
+        var tip = new List<string>();
+        if (SongList.Instance.TryGetSong(underlyingId, out var baseSong))
         {
-            if (!string.IsNullOrEmpty(songName))
-                suffix = " - ";
-            suffix += $"{songId}";
+            var baseName = baseSong.Strings[lang].Name;
+            if (!string.IsNullOrEmpty(baseName))
+                tip.Add($"Replacing: {baseName} ({underlyingId})");
+            var loc = baseSong.Strings[lang].Locations;
+            var info = baseSong.Strings[lang].AdditionalInfo;
+            if (!string.IsNullOrEmpty(loc)) tip.Add(loc);
+            if (!string.IsNullOrEmpty(info)) tip.Add(info);
         }
-
-        var text = songName + suffix;
-
-        text = playedByOrch ? $"{NativeNowPlayingPrefix}[{text}]" : $"{NativeNowPlayingPrefix}{text}";
-
-        _dtrEntry.Text = text;
-
-        if (Configuration.Instance.DisableTooltips)
-        {
-            _dtrEntry.Tooltip = "";
-        }
-        else
-        {
-            var locEmpty = string.IsNullOrEmpty(locations);
-            var infoEmpty = string.IsNullOrEmpty(info);
-            if (locEmpty && infoEmpty)
-                _dtrEntry.Tooltip = "";
-            if (!locEmpty && infoEmpty)
-                _dtrEntry.Tooltip = $"{locations}";
-            if (locEmpty && !infoEmpty)
-                _dtrEntry.Tooltip = $"{info}";
-            if (!locEmpty && !infoEmpty)
-                _dtrEntry.Tooltip = $"{locations}\n{info}";
-        }
+        _dtrEntry.Tooltip = string.Join('\n', tip);
+        return;
     }
+
+    // Otherwise, show the audible in-game song (or the underlying song if we're forcing silence)
+    var displayId = (songId == 1 && Orchestrion.Audio.LocalAudioPlayer.IsPlaying) ? underlyingId : songId;
+    if (!SongList.Instance.TryGetSong(displayId, out var song))
+    {
+        _dtrEntry.Text = "";
+        _dtrEntry.Tooltip = "";
+        return;
+    }
+
+    var name = song.Strings[lang].Name;
+    if (string.IsNullOrEmpty(name))
+    {
+        _dtrEntry.Text = "";
+        _dtrEntry.Tooltip = "";
+        return;
+    }
+
+    var idSuffix = Configuration.Instance.ShowIdInNative ? $" - {displayId}" : "";
+    var pre = playedByOrch ? $"{NativeNowPlayingPrefix}[" : NativeNowPlayingPrefix;
+    var post = playedByOrch ? "]" : string.Empty;
+
+    _dtrEntry.Text = $"{pre}{name}{idSuffix}{post}";
+
+    var tip2 = new List<string>();
+    var l = song.Strings[lang].Locations;
+    var i = song.Strings[lang].AdditionalInfo;
+    if (!string.IsNullOrEmpty(l)) tip2.Add(l);
+    if (!string.IsNullOrEmpty(i)) tip2.Add(i);
+    _dtrEntry.Tooltip = string.Join('\n', tip2);
+}
+
 
     private void UpdateChat(int songId, bool playedByOrch = false)
     {
