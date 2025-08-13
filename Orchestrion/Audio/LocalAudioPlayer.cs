@@ -1,251 +1,215 @@
 ﻿using System;
 using System.IO;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
+using System.Threading;
+using System.Threading.Tasks;
 using NAudio.Wave;
-using FFXIVClientStructs.FFXIV.Client.UI.Misc;
 
 namespace Orchestrion.Audio;
 
+/// <summary>
+/// Minimal local audio player with smooth fade in/out and crossfade support,
+/// plus a base "game volume" multiplier that mirrors the in-game Master×BGM levels.
+/// </summary>
 public static class LocalAudioPlayer
 {
-    private static readonly object Gate = new();
+    private static readonly object _gate = new();
+    private static readonly SemaphoreSlim _transitionLock = new(1, 1);
 
-    private static IWavePlayer _output;
-    private static AudioFileReader _reader;
-    private static bool _stopping;
-    private static bool _isPaused;
+    private static WaveOutEvent? _output;
+    private static AudioFileReader? _reader;
 
-    public static bool IsPlaying { get; private set; }
-    public static string CurrentPath { get; private set; } = string.Empty;
+    private static float _fadeGain = 1f;       // 0..1, controlled by fades
+    private static float _baseGameVolume = 1f; // 0..1, mirrors in-game (master * BGM * mutes)
+    private static CancellationTokenSource? _fadeCts;
 
-    /// <summary>Total duration of the loaded track, or zero if none.</summary>
-    public static TimeSpan Duration => _reader?.TotalTime ?? TimeSpan.Zero;
+    // Gentler defaults
+    private const int DefaultFadeOutMs = 4000;
+    private const int DefaultFadeInMs = 2000;
 
-    /// <summary>Current playback position (get/set). No-op if nothing is loaded.</summary>
+    public static bool IsPlaying
+        => _output is not null && _output.PlaybackState == PlaybackState.Playing;
+
+    public static TimeSpan Duration
+        => _reader?.TotalTime ?? TimeSpan.Zero;
+
     public static TimeSpan Position
-    {
-        get => _reader?.CurrentTime ?? TimeSpan.Zero;
-        set { if (_reader != null) _reader.CurrentTime = value; }
-    }
-
-    /// <summary>Convenience alias kept for callers expecting Play(string).</summary>
-    public static void Play(string path) => PlayFile(path);
-
-    /// <summary>Load and start playing a local audio file.</summary>
-    public static void PlayFile(string path)
-    {
-        try
-        {
-            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
-            {
-                DalamudApi.ChatGui.PrintError($"[Orchestrion] File not found: {path}");
-                return;
-            }
-
-            lock (Gate)
-            {
-                StopInternal();
-
-                _reader = new AudioFileReader(path)
-                {
-                    Volume = 1.0f, // actual level is applied by ApplyGameVolume()
-                };
-
-                _output = new WaveOutEvent();
-                _output.Init(_reader);
-                _output.PlaybackStopped += OutputOnPlaybackStopped;
-
-                _output.Play();
-                _isPaused = false;
-                IsPlaying = true;
-                CurrentPath = path;
-
-                // Immediately align to in-game volume.
-                ApplyGameVolume();
-            }
-        }
-        catch (Exception ex)
-        {
-            DalamudApi.PluginLog.Error(ex, "[LocalAudioPlayer] Failed to play file.");
-            Stop();
-        }
-    }
-
-    /// <summary>Resume if paused (does nothing if not loaded).</summary>
-    public static void Play()
-    {
-        lock (Gate)
-        {
-            if (_output == null || IsPlaying && !_isPaused) return;
-
-            _output.Play();
-            _isPaused = false;
-            IsPlaying = true;
-
-            // ensure volume reflects current game setting on resume
-            ApplyGameVolume();
-        }
-    }
-
-    /// <summary>Pause playback (does nothing if not loaded).</summary>
-    public static void Pause()
-    {
-        lock (Gate)
-        {
-            if (_output == null || _isPaused) return;
-            try
-            {
-                _output.Pause();
-                _isPaused = true;
-                IsPlaying = false;
-            }
-            catch { /* ignore */ }
-        }
-    }
-
-    /// <summary>Stop playback.</summary>
-    public static void Stop()
-    {
-        lock (Gate)
-        {
-            StopInternal();
-        }
-    }
-
-    private static void StopInternal()
-    {
-        if (_output != null)
-        {
-            try
-            {
-                _stopping = true;
-                _output.Stop();
-            }
-            catch { /* ignored */ }
-            finally
-            {
-                _output.PlaybackStopped -= OutputOnPlaybackStopped;
-                _output.Dispose();
-                _output = null;
-                _stopping = false;
-            }
-        }
-
-        if (_reader != null)
-        {
-            _reader.Dispose();
-            _reader = null;
-        }
-
-        IsPlaying = false;
-        _isPaused = false;
-        CurrentPath = string.Empty;
-    }
-
-    private static void OutputOnPlaybackStopped(object sender, StoppedEventArgs e)
-    {
-        lock (Gate)
-        {
-            if (_stopping || _reader == null || _output == null)
-                return;
-
-            // Loop by default: restart the same track seamlessly.
-            try
-            {
-                _reader.Position = 0;
-                _output.Play();
-                IsPlaying = true;
-                _isPaused = false;
-                ApplyGameVolume();
-                return;
-            }
-            catch
-            {
-                // Fall through to cleanup if loop restart fails.
-            }
-
-            // Cleanup fallback
-            _output?.Dispose();
-            _reader?.Dispose();
-            _output = null;
-            _reader = null;
-            IsPlaying = false;
-            _isPaused = false;
-            CurrentPath = string.Empty;
-        }
-    }
-
-    // =============================
-    // In-game volume integration
-    // =============================
+        => _reader?.CurrentTime ?? TimeSpan.Zero;
 
     /// <summary>
-    /// Read the game's current Master + BGM sliders (and their muted flags) and
-    /// apply the combined scalar to the local player's volume.
+    /// Apply the last set base/game volume. Call when you update it externally.
     /// </summary>
     public static void ApplyGameVolume()
     {
-        lock (Gate)
-        {
-            if (_reader == null) return;
+        UpdateOutputVolume();
+    }
 
-            try
-            {
-                var scalar = ReadGameBgmScalar();
-                _reader.Volume = scalar;
-            }
-            catch (Exception ex)
-            {
-                DalamudApi.PluginLog.Error(ex, "[LocalAudioPlayer] ApplyGameVolume failed; falling back to 1.0");
-                _reader.Volume = 1.0f;
-            }
+    /// <summary>
+    /// Convenience overload for callers that pass the base game volume (0..1).
+    /// </summary>
+    public static void ApplyGameVolume(float baseVolume01)
+    {
+        SetBaseVolume(baseVolume01);
+    }
+
+    /// <summary>Directly set the base/game volume (0..1).</summary>
+    public static void SetBaseVolume(float v01)
+    {
+        lock (_gate)
+        {
+            _baseGameVolume = Math.Clamp(v01, 0f, 1f);
+            UpdateOutputVolume();
         }
     }
 
-    // Backward-compat overloads: ignore the argument and use live game settings.
-    public static void ApplyGameVolume(float _) => ApplyGameVolume();
-    public static void ApplyGameVolume(double _) => ApplyGameVolume();
+    /// <summary>
+    /// Start playback of a file with optional fades (defaults tuned for subtle starts).
+    /// </summary>
+    public static void PlayFile(string path, int fadeOutMs = DefaultFadeOutMs, int fadeInMs = DefaultFadeInMs)
+        => _ = TransitionToAsync(path, fadeOutMs, fadeInMs);
 
     /// <summary>
-    /// Returns 0..1: (Master/100) * (BGM/100) unless either is muted.
+    /// Crossfade from the current file to a new one.
     /// </summary>
-    private static unsafe float ReadGameBgmScalar()
+    public static Task CrossfadeToFile(string path, int fadeOutMs = DefaultFadeOutMs, int fadeInMs = DefaultFadeInMs)
+        => TransitionToAsync(path, fadeOutMs, fadeInMs);
+
+    /// <summary>
+    /// Back-compat wrapper (older code called LocalAudioPlayer.Play).
+    /// </summary>
+    public static void Play(string path) => PlayFile(path, DefaultFadeOutMs, DefaultFadeInMs);
+
+    /// <summary>
+    /// Back-compat wrapper with explicit fade timings.
+    /// </summary>
+    public static void Play(string path, int fadeOutMs, int fadeInMs) => PlayFile(path, fadeOutMs, fadeInMs);
+
+    public static void Stop()
+        => _ = StopAsync(DefaultFadeOutMs);
+
+    public static async Task StopAsync(int fadeOutMs = DefaultFadeOutMs)
     {
-        var cfg = ConfigModule.Instance();
-        if (cfg == null) return 1.0f;
-
-        ref var masterVal = ref RawOptionValue.From(ref cfg->Values[(int)ConfigEnum.Master]);
-        ref var bgmVal = ref RawOptionValue.From(ref cfg->Values[(int)ConfigEnum.Bgm]);
-        ref var masterMuted = ref RawOptionValue.From(ref cfg->Values[(int)ConfigEnum.MasterMuted]);
-        ref var bgmMuted = ref RawOptionValue.From(ref cfg->Values[(int)ConfigEnum.BgmMuted]);
-
-        var muted = (byte)masterMuted.Value1 != 0 || (byte)bgmMuted.Value1 != 0;
-        if (muted) return 0.0f;
-
-        var m = Math.Clamp((byte)masterVal.Value1 / 100f, 0f, 1f);
-        var b = Math.Clamp((byte)bgmVal.Value1 / 100f, 0f, 1f);
-        return Math.Clamp(m * b, 0f, 1f);
+        await _transitionLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            CancelFade_NoLock();
+            if (_output is not null)
+            {
+                var cts = NewFadeCts();
+                await FadeToAsync(0f, fadeOutMs, cts.Token).ConfigureAwait(false);
+            }
+            InternalStop_NoLock();
+        }
+        finally
+        {
+            _transitionLock.Release();
+        }
     }
 
-    // Minimal local copies so we don't pull in extra files just to read values.
-    private enum ConfigEnum
-    {
-        // Matches SoundSetter's ConfigOptionKind.ConfigEnum
-        Master = 86,
-        Bgm = 87,
+    // -------------------------- internals --------------------------
 
-        MasterMuted = 96,
-        BgmMuted = 97,
+    private static async Task TransitionToAsync(string path, int fadeOutMs, int fadeInMs)
+    {
+        if (!File.Exists(path))
+            return;
+
+        await _transitionLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            CancelFade_NoLock();
+
+            // Fade out current
+            if (_output is not null)
+            {
+                var ctsOut = NewFadeCts();
+                await FadeToAsync(0f, fadeOutMs, ctsOut.Token).ConfigureAwait(false);
+            }
+
+            // Swap stream
+            InternalStop_NoLock();
+            InternalStart_NoLock(path);
+
+            // Fade in new
+            _fadeGain = 0f;
+            UpdateOutputVolume();
+            var ctsIn = NewFadeCts();
+            await FadeToAsync(1f, fadeInMs, ctsIn.Token).ConfigureAwait(false);
+        }
+        finally
+        {
+            _transitionLock.Release();
+        }
     }
 
-    [StructLayout(LayoutKind.Sequential, Size = 0x10)]
-    private struct RawOptionValue
+    private static void InternalStart_NoLock(string path)
     {
-        public ulong Value1;
-        public ulong Value2;
+        _reader = new AudioFileReader(path)
+        {
+            Volume = 0f // fade will raise it
+        };
+        _output = new WaveOutEvent();
+        _output.Init(_reader);
+        _output.Play();
+        UpdateOutputVolume();
+    }
 
-        public static unsafe ref RawOptionValue From(ref ConfigModule.OptionValue optionValue)
-            => ref Unsafe.As<ConfigModule.OptionValue, RawOptionValue>(ref optionValue);
+    private static void InternalStop_NoLock()
+    {
+        try { _output?.Stop(); } catch { /* ignore */ }
+        _output?.Dispose();
+        _reader?.Dispose();
+        _output = null;
+        _reader = null;
+        _fadeGain = 1f;
+        UpdateOutputVolume();
+    }
+
+    private static async Task FadeToAsync(float target, int ms, CancellationToken ct)
+    {
+        if (_reader is null || _output is null || ms <= 0)
+        {
+            _fadeGain = target;
+            UpdateOutputVolume();
+            return;
+        }
+
+        var start = _fadeGain;
+        var delta = target - start;
+        ms = Math.Max(ms, 1);
+        var steps = Math.Max(1, ms / 16); // ~60 fps
+
+        for (var i = 1; i <= steps; i++)
+        {
+            ct.ThrowIfCancellationRequested();
+            var t = i / (float)steps;
+            // Cosine easing for a nicer curve.
+            var eased = (float)((1 - Math.Cos(t * Math.PI)) / 2.0);
+            _fadeGain = start + delta * eased;
+            UpdateOutputVolume();
+            await Task.Delay(16, ct).ConfigureAwait(false);
+        }
+
+        _fadeGain = target;
+        UpdateOutputVolume();
+    }
+
+    private static void UpdateOutputVolume()
+    {
+        if (_reader is null) return;
+        var vol = Math.Clamp(_fadeGain * _baseGameVolume, 0f, 1f);
+        _reader.Volume = vol;
+    }
+
+    private static CancellationTokenSource NewFadeCts()
+    {
+        CancelFade_NoLock();
+        _fadeCts = new CancellationTokenSource();
+        return _fadeCts;
+    }
+
+    private static void CancelFade_NoLock()
+    {
+        try { _fadeCts?.Cancel(); } catch { /* ignore */ }
+        _fadeCts?.Dispose();
+        _fadeCts = null;
     }
 }

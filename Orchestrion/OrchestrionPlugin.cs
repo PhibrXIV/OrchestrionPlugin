@@ -50,6 +50,11 @@ public class OrchestrionPlugin : IDalamudPlugin
         LanguageChanged(DalamudApi.PluginInterface.UiLanguage);
 
         BGMAddressResolver.Init();
+
+        // >>> ADDED: keep local playback volume in sync with in-game Master×BGM
+        GameVolumeSync.Initialize();
+        // <<< ADDED
+
         BGMManager.OnSongChanged += OnSongChanged;
 
         _windowSystem = new WindowSystem();
@@ -116,8 +121,14 @@ public class OrchestrionPlugin : IDalamudPlugin
         _mainWindow.Dispose();
         DalamudApi.Framework.Update -= OrchestrionUpdate;
         DalamudApi.PluginInterface.UiBuilder.Draw -= _windowSystem.Draw;
+        // DalamudApi.PluginInterface.UiBuilder.BuildFonts -= BuildFonts;
         DalamudApi.CommandManager.RemoveHandler(CommandName);
         _dtrEntry?.Remove();
+
+        // >>> ADDED: tear down volume sync
+        GameVolumeSync.Dispose();
+        // <<< ADDED
+
         PlaylistManager.Dispose();
         BGMManager.Dispose();
         LargeFont?.Dispose();
@@ -170,9 +181,6 @@ public class OrchestrionPlugin : IDalamudPlugin
 
     private void ClientStateOnLogout(int type, int code)
     {
-        // Ensure we drop any silence pin if logging out mid-playback
-        if (LocalAudioPlayer.IsPlaying)
-            LocalAudioPlayer.Stop();
         BGMManager.Stop();
     }
 
@@ -200,40 +208,12 @@ public class OrchestrionPlugin : IDalamudPlugin
         var argSplit = args.Split(' ');
         var argLen = argSplit.Length;
 
+        // print args to log
         DalamudApi.PluginLog.Information($"command: {command} args: {args}");
         var argString = "['" + string.Join("', '", argSplit) + "']";
         DalamudApi.PluginLog.Information($"argLen: {argLen} argSplit: {argString}");
 
         var mainArg = argSplit[0].ToLowerInvariant();
-
-        // ----- NEW: local audio commands inside /porch -----
-        if (mainArg == "local")
-        {
-            if (argLen == 1)
-            {
-                DalamudApi.ChatGui.PrintError(BuildChatMessage("Usage: /porch local play <full path> | /porch local stop"));
-                return;
-            }
-
-            var sub = argSplit[1].ToLowerInvariant();
-            switch (sub)
-            {
-                case "play" when argLen >= 3:
-                    {
-                        var path = string.Join(' ', argSplit.Skip(2));
-                        LocalAudioPlayer.PlayFile(path);
-                        break;
-                    }
-                case "stop":
-                    LocalAudioPlayer.Stop();
-                    break;
-                default:
-                    DalamudApi.ChatGui.PrintError(BuildChatMessage("Usage: /porch local play <full path> | /porch local stop"));
-                    break;
-            }
-            return;
-        }
-        // ---------------------------------------------------
 
         switch (argLen)
         {
@@ -296,7 +276,7 @@ public class OrchestrionPlugin : IDalamudPlugin
                         else
                             DalamudApi.ChatGui.PrintError(BuildChatMessage(string.Format(Loc.Localize("SongIdNotFound", "Song ID {0} not found."), songId)));
                         break;
-                    case "play" when !int.TryParse(argSplit[1], out var _):
+                    case "play" when !int.TryParse(argSplit[1], out var songId):
                         DalamudApi.PluginLog.Verbose("play by song name");
                         HandlePlayBySongName(argSplit);
                         break;
@@ -441,9 +421,6 @@ public class OrchestrionPlugin : IDalamudPlugin
         DalamudApi.ChatGui.Print(BuildChatMessage("/porch repeat [all, one, once] - " + Loc.Localize("HelpPlaylistRepeat", "Set the current playlist to the specified repeat mode")));
         DalamudApi.ChatGui.Print(BuildChatMessage("/porch next - " + Loc.Localize("HelpPlaylistNext", "Play the next song in the current playlist")));
         DalamudApi.ChatGui.Print(BuildChatMessage("/porch previous - " + Loc.Localize("HelpPlaylistPrevious", "Play the previous song in the current playlist")));
-        // NEW:
-        DalamudApi.ChatGui.Print(BuildChatMessage("/porch local play <full path> - Play a local audio file (mp3/wav) and silence in-game BGM"));
-        DalamudApi.ChatGui.Print(BuildChatMessage("/porch local stop - Stop local playback and restore in-game BGM"));
     }
 
     private void UpdateDtr(int songId, bool playedByOrch = false)

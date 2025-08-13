@@ -1,4 +1,5 @@
 ﻿using System.IO;
+using System.Threading.Tasks;
 using CheapLoc;
 using Dalamud.Plugin.Services;
 using Orchestrion.BGMSystem;
@@ -19,6 +20,10 @@ public static class BGMManager
     // External/local playback silencing state
     private static int _externalSilenceDepth;
     private static bool _silencedViaExternal;
+
+    // Fade timings (tweak as desired)
+    private const int FadeOutMs = 2000;
+    private const int FadeInMs = 2000;
 
     public delegate void SongChanged(int oldSong, int currentSong, int oldSecondSong, int oldCurrentSong, bool oldPlayedByOrch, bool playedByOrchestrion);
     public static event SongChanged OnSongChanged;
@@ -55,7 +60,7 @@ public static class BGMManager
     {
         _bgmController.Update();
 
-        // Keep local player's volume synced to in-game settings.
+        // Keep local player's volume synced to in-game settings (master * BGM * mutes, if you compute it).
         LocalAudioPlayer.ApplyGameVolume();
 
         // Safety: if local playback ended without calling our stop hook, release silence.
@@ -97,13 +102,13 @@ public static class BGMManager
         // =========================================================
         if (_silencedViaExternal)
         {
-            // If the new game BGM also has a LOCAL replacement, retarget the local player and keep silencing.
+            // If the new game BGM also has a LOCAL replacement, smoothly re-target the local player.
             if (newHasReplacement && newSongReplacement.IsLocal)
             {
                 var path = newSongReplacement.LocalPath?.Trim() ?? string.Empty;
                 if (File.Exists(path))
                 {
-                    LocalAudioPlayer.PlayFile(path);
+                    _ = LocalAudioPlayer.CrossfadeToFile(path, FadeOutMs, FadeInMs);
                 }
                 else
                 {
@@ -117,16 +122,24 @@ public static class BGMManager
             }
 
             // Otherwise (NO local replacement for the new game BGM):
-            //  - stop local playback,
+            //  - fade out and stop local playback,
             //  - end external silence,
-            //  - and FALL THROUGH to normal handling so in-game (or in-game replacement) becomes audible.
-            if (LocalAudioPlayer.IsPlaying)
+            //  - optionally play an in-game replacement if configured.
+            int toPlayAfter = ResolveInGameReplacementToPlay(
+                newSong, newSecondSong,
+                newHasReplacement, newSongReplacement,
+                newSecondHasReplacement, newSecondSongReplacement,
+                oldSong, PlayingSongId);
+
+            _ = Task.Run(async () =>
             {
-                DalamudApi.PluginLog.Debug("[HandleSongChanged] New game BGM has no local replacement. Stopping local playback and releasing silence.");
-                LocalAudioPlayer.Stop();
-            }
-            EndExternalSilence();
-            // Do NOT return; allow normal handling below to decide what to play.
+                await LocalAudioPlayer.StopAsync(FadeOutMs).ConfigureAwait(false);
+                EndExternalSilence();
+                if (toPlayAfter > 0)
+                    Play(toPlayAfter, isReplacement: true);
+            });
+
+            return;
         }
 
         // =========================================================
@@ -142,9 +155,9 @@ public static class BGMManager
             }
             else
             {
-                // Start local playback and silence the game audio beneath it.
-                LocalAudioPlayer.PlayFile(path);
+                // Start local playback with a fade and silence the game audio beneath it.
                 BeginExternalSilence();
+                LocalAudioPlayer.PlayFile(path, 0, FadeInMs);
                 return;
             }
         }
@@ -188,12 +201,37 @@ public static class BGMManager
         }
 
         // Ensure any lingering local playback is stopped when switching to an in-game replacement.
-        if (LocalAudioPlayer.IsPlaying) LocalAudioPlayer.Stop();
+        if (LocalAudioPlayer.IsPlaying) _ = LocalAudioPlayer.StopAsync(FadeOutMs);
 
         // We might have been silencing the game earlier; make sure it's released.
         if (_silencedViaExternal) EndExternalSilence();
 
         Play(toPlay, isReplacement: true);
+    }
+
+    private static int ResolveInGameReplacementToPlay(
+        int newSong, int newSecondSong,
+        bool newHasReplacement, SongReplacementEntry newRep,
+        bool newSecondHasReplacement, SongReplacementEntry newSecondRep,
+        int oldSong, int playingSongId)
+    {
+        if (!newHasReplacement || newRep.IsLocal)
+            return 0;
+
+        if (newRep.ReplacementId == SongReplacementEntry.NoChangeId)
+        {
+            // Prefer a concrete replacement for the second track if one exists.
+            if (newSecondHasReplacement && !newSecondRep.IsLocal && newSecondRep.ReplacementId != SongReplacementEntry.NoChangeId)
+                return newSecondRep.ReplacementId;
+
+            // If nothing is currently forced by us, keep the old audible song (game's own crossfade).
+            if (playingSongId == 0)
+                return oldSong;
+
+            return 0;
+        }
+
+        return newRep.ReplacementId;
     }
 
     public static void Play(int songId, bool isReplacement = false)
@@ -219,11 +257,11 @@ public static class BGMManager
 
         _ddPlaylist = null;
 
-        // Stop local playback if active.
+        // Fade out local playback if active.
         if (LocalAudioPlayer.IsPlaying)
         {
-            DalamudApi.PluginLog.Debug("[Stop] Stopping local playback...");
-            LocalAudioPlayer.Stop();
+            DalamudApi.PluginLog.Debug("[Stop] Stopping local playback (fade)...");
+            _ = LocalAudioPlayer.StopAsync(FadeOutMs);
         }
 
         // Release any explicit silence.
