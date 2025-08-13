@@ -32,23 +32,27 @@ public class Configuration : IPluginConfiguration
     public string ChatLanguageCode { get; set; } = "en";
     public XivChatType ChatType { get; set; } = DalamudApi.PluginInterface.GeneralChatType;
     public bool DisableTooltips { get; set; } = false;
-    
+
     public string LastSelectedPlaylist { get; set; } = "Favorites";
 
     public Dictionary<int, SongReplacementEntry> SongReplacements { get; private set; } = new();
-    
+
     [Obsolete("Favorites are gone in favor of playlists.")]
     public HashSet<int> FavoriteSongs { get; internal set; } = new();
-    
+
     public Dictionary<string, Playlist> Playlists { get; set; } = new();
+
+    // NEW: Local playlists for external audio
+    public Dictionary<string, LocalPlaylist> LocalPlaylists { get; set; } = new();
 
     private Configuration() { }
 
     [JsonIgnore]
     private static Configuration _instance;
-    
+
     [JsonIgnore]
-    public static Configuration Instance {
+    public static Configuration Instance
+    {
         get
         {
             _instance ??= DalamudApi.PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
@@ -60,7 +64,8 @@ public class Configuration : IPluginConfiguration
     public bool TryGetPlaylist(string playlistName, out Playlist foundPlaylist)
     {
         foundPlaylist = null;
-        foreach (var pInfo in Playlists) {
+        foreach (var pInfo in Playlists)
+        {
             if (playlistName.Equals(pInfo.Key, StringComparison.InvariantCultureIgnoreCase))
             {
                 foundPlaylist = pInfo.Value;

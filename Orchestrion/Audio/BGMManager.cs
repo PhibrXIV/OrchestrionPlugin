@@ -1,5 +1,5 @@
-﻿using CheapLoc;
-using Dalamud.Logging;
+﻿using System.IO;
+using CheapLoc;
 using Dalamud.Plugin.Services;
 using Orchestrion.BGMSystem;
 using Orchestrion.Ipc;
@@ -10,22 +10,26 @@ namespace Orchestrion.Audio;
 
 public static class BGMManager
 {
-	private static readonly BGMController _bgmController;
+    private static readonly BGMController _bgmController;
     private static readonly OrchestrionIpcManager _ipcManager;
-    
+
     private static bool _isPlayingReplacement;
     private static string _ddPlaylist;
 
+    // External/local playback silencing state
+    private static int _externalSilenceDepth;
+    private static bool _silencedViaExternal;
+
     public delegate void SongChanged(int oldSong, int currentSong, int oldSecondSong, int oldCurrentSong, bool oldPlayedByOrch, bool playedByOrchestrion);
     public static event SongChanged OnSongChanged;
-    
+
     public static int CurrentSongId => _bgmController.CurrentSongId;
     public static int PlayingSongId => _bgmController.PlayingSongId;
     public static int CurrentAudibleSong => _bgmController.CurrentAudibleSong;
     public static int PlayingScene => _bgmController.PlayingScene;
-    
+
     static BGMManager()
-	{
+    {
         _bgmController = new BGMController();
         _ipcManager = new OrchestrionIpcManager();
 
@@ -46,63 +50,134 @@ public static class BGMManager
         _ipcManager.InvokeSongChanged(newSong);
         if (playedByOrch) _ipcManager.InvokeOrchSongChanged(newSong);
     }
-    
-    public static void Update(IFramework ignored)
+
+    public static void Update(IFramework _)
     {
         _bgmController.Update();
+
+        // Keep local player's volume synced to in-game settings.
+        LocalAudioPlayer.ApplyGameVolume();
+
+        // Safety: if local playback ended without calling our stop hook, release silence.
+        if (_silencedViaExternal && !LocalAudioPlayer.IsPlaying)
+            EndExternalSilence();
     }
-    
+
     private static void HandleSongChanged(int oldSong, int newSong, int oldSecondSong, int newSecondSong)
     {
         var currentChanged = oldSong != newSong;
         var secondChanged = oldSecondSong != newSecondSong;
-        
+
         var newHasReplacement = Configuration.Instance.SongReplacements.TryGetValue(newSong, out var newSongReplacement);
         var newSecondHasReplacement = Configuration.Instance.SongReplacements.TryGetValue(newSecondSong, out var newSecondSongReplacement);
-        
+
         if (currentChanged)
             DalamudApi.PluginLog.Debug($"[HandleSongChanged] Current Song ID changed from {_bgmController.OldSongId} to {_bgmController.CurrentSongId}");
-        
+
         if (secondChanged)
             DalamudApi.PluginLog.Debug($"[HandleSongChanged] Second song ID changed from {_bgmController.OldSecondSongId} to {_bgmController.SecondSongId}");
-        
+
+        // Deep Dungeon mode overrides everything.
         if (PlayingSongId != 0 && DeepDungeonModeActive())
         {
-            if (!string.IsNullOrEmpty(_ddPlaylist) && !Configuration.Instance.Playlists.ContainsKey(_ddPlaylist)) // user deleted playlist
+            if (!string.IsNullOrEmpty(_ddPlaylist) && !Configuration.Instance.Playlists.ContainsKey(_ddPlaylist))
                 Stop();
             else
                 PlayRandomSong(_ddPlaylist);
             return;
         }
 
-        if (PlayingSongId != 0 && !_isPlayingReplacement) return; // manually playing track
-        if (secondChanged && !currentChanged && !_isPlayingReplacement) return; // don't care about behind song if not playing replacement
+        // If the user manually started something and it wasn't a replacement, do nothing.
+        if (PlayingSongId != 0 && !_isPlayingReplacement) return;
+        // Don't care about behind song unless we were playing a replacement.
+        if (secondChanged && !currentChanged && !_isPlayingReplacement) return;
+
+        // =========================================================
+        // While external/local playback is active
+        // =========================================================
+        if (_silencedViaExternal)
+        {
+            // If the new game BGM also has a LOCAL replacement, retarget the local player and keep silencing.
+            if (newHasReplacement && newSongReplacement.IsLocal)
+            {
+                var path = newSongReplacement.LocalPath?.Trim() ?? string.Empty;
+                if (File.Exists(path))
+                {
+                    LocalAudioPlayer.PlayFile(path);
+                }
+                else
+                {
+                    DalamudApi.ChatGui.PrintError($"[Orchestrion] Local replacement missing: {path}");
+                }
+
+                // Keep the game silenced underneath (force silent track if needed).
+                if (PlayingSongId != 1 || !_isPlayingReplacement)
+                    Play(1, isReplacement: true);
+                return;
+            }
+
+            // Otherwise (NO local replacement for the new game BGM):
+            //  - stop local playback,
+            //  - end external silence,
+            //  - and FALL THROUGH to normal handling so in-game (or in-game replacement) becomes audible.
+            if (LocalAudioPlayer.IsPlaying)
+            {
+                DalamudApi.PluginLog.Debug("[HandleSongChanged] New game BGM has no local replacement. Stopping local playback and releasing silence.");
+                LocalAudioPlayer.Stop();
+            }
+            EndExternalSilence();
+            // Do NOT return; allow normal handling below to decide what to play.
+        }
+
+        // =========================================================
+        // Local-file replacement handling (when local is NOT currently active)
+        // =========================================================
+        if (newHasReplacement && newSongReplacement.IsLocal)
+        {
+            var path = newSongReplacement.LocalPath?.Trim() ?? string.Empty;
+            if (!File.Exists(path))
+            {
+                DalamudApi.ChatGui.PrintError($"[Orchestrion] Local replacement missing: {path}");
+                // fall back to normal replacement rules
+            }
+            else
+            {
+                // Start local playback and silence the game audio beneath it.
+                LocalAudioPlayer.PlayFile(path);
+                BeginExternalSilence();
+                return;
+            }
+        }
+
+        // =========================================================
+        // Normal in-game replacement handling (existing behavior)
+        // =========================================================
 
         if (!newHasReplacement) // user isn't playing and no replacement at all
         {
-            if (PlayingSongId != 0)
+            if (PlayingSongId != 0 || LocalAudioPlayer.IsPlaying)
                 Stop();
             else
-                // This is the only place in this method where we invoke OnSongChanged, as Play and Stop do it themselves
                 InvokeSongChanged(oldSong, newSong, oldSecondSong, newSecondSong, oldPlayedByOrch: false, playedByOrch: false);
             return;
         }
 
         var toPlay = 0;
-        
+
         DalamudApi.PluginLog.Debug($"[HandleSongChanged] Song ID {newSong} has a replacement of {newSongReplacement.ReplacementId}");
-        
-        // Handle 2nd changing when 1st has replacement of NoChangeId, only time it matters
+
+        // Handle 2nd changing when 1st has replacement of NoChangeId
         if (newSongReplacement.ReplacementId == SongReplacementEntry.NoChangeId)
         {
             if (secondChanged)
             {
                 toPlay = newSecondSong;
-                if (newSecondHasReplacement) toPlay = newSecondSongReplacement.ReplacementId;
+                if (newSecondHasReplacement && !newSecondSongReplacement.IsLocal)
+                    toPlay = newSecondSongReplacement.ReplacementId;
                 if (toPlay == SongReplacementEntry.NoChangeId) return; // give up
-            }    
+            }
         }
-            
+
         if (newSongReplacement.ReplacementId == SongReplacementEntry.NoChangeId && PlayingSongId == 0)
         {
             toPlay = oldSong; // no net BGM change
@@ -111,8 +186,14 @@ public static class BGMManager
         {
             toPlay = newSongReplacement.ReplacementId;
         }
-        
-        Play(toPlay, isReplacement: true); // we only ever play a replacement here
+
+        // Ensure any lingering local playback is stopped when switching to an in-game replacement.
+        if (LocalAudioPlayer.IsPlaying) LocalAudioPlayer.Stop();
+
+        // We might have been silencing the game earlier; make sure it's released.
+        if (_silencedViaExternal) EndExternalSilence();
+
+        Play(toPlay, isReplacement: true);
     }
 
     public static void Play(int songId, bool isReplacement = false)
@@ -120,7 +201,7 @@ public static class BGMManager
         var wasPlaying = PlayingSongId != 0;
         var oldSongId = CurrentAudibleSong;
         var secondSongId = _bgmController.SecondSongId;
-        
+
         DalamudApi.PluginLog.Debug($"[Play] Playing {songId}");
         InvokeSongChanged(oldSongId, songId, secondSongId, oldSongId, oldPlayedByOrch: wasPlaying, playedByOrch: true);
         _bgmController.SetSong((ushort)songId);
@@ -129,41 +210,52 @@ public static class BGMManager
 
     public static void Stop()
     {
+        // Stop playlist if running.
         if (PlaylistManager.IsPlaying)
         {
-            DalamudApi.PluginLog.Debug("[Stop] Stopping playlist...");    
+            DalamudApi.PluginLog.Debug("[Stop] Stopping playlist...");
             PlaylistManager.Reset();
         }
 
         _ddPlaylist = null;
-        
+
+        // Stop local playback if active.
+        if (LocalAudioPlayer.IsPlaying)
+        {
+            DalamudApi.PluginLog.Debug("[Stop] Stopping local playback...");
+            LocalAudioPlayer.Stop();
+        }
+
+        // Release any explicit silence.
+        _externalSilenceDepth = 0;
+        _silencedViaExternal = false;
+
         if (PlayingSongId == 0) return;
         DalamudApi.PluginLog.Debug($"[Stop] Stopping playing {_bgmController.PlayingSongId}...");
 
-        if (Configuration.Instance.SongReplacements.TryGetValue(_bgmController.CurrentSongId, out var replacement))
+        if (Configuration.Instance.SongReplacements.TryGetValue(_bgmController.CurrentSongId, out var replacement) && !replacement.IsLocal)
         {
             DalamudApi.PluginLog.Debug($"[Stop] Song ID {_bgmController.CurrentSongId} has a replacement of {replacement.ReplacementId}...");
 
             var toPlay = replacement.ReplacementId;
-            
+
             if (toPlay == SongReplacementEntry.NoChangeId)
                 toPlay = _bgmController.OldSongId;
 
-            // Play will invoke OnSongChanged for us
             Play(toPlay, isReplacement: true);
             return;
         }
 
         var second = _bgmController.SecondSongId;
-        
-        // If there was no replacement involved, we don't need to do anything else, just stop
+
         InvokeSongChanged(PlayingSongId, CurrentSongId, second, second, oldPlayedByOrch: true, playedByOrch: false);
         _bgmController.SetSong(0);
+        _isPlayingReplacement = false;
     }
 
     private static void InvokeSongChanged(int oldSongId, int newSongId, int oldSecondSongId, int newSecondSongId, bool oldPlayedByOrch, bool playedByOrch)
     {
-        DalamudApi.PluginLog.Debug($"[InvokeSongChanged] Invoking SongChanged event with {oldSongId} -> {newSongId}, {oldSecondSongId} -> {newSecondSongId} | {oldPlayedByOrch} {playedByOrch}");
+        DalamudApi.PluginLog.Debug($"[InvokeSongChanged] {oldSongId} -> {newSongId}, {oldSecondSongId} -> {newSecondSongId} | {oldPlayedByOrch} {playedByOrch}");
         OnSongChanged?.Invoke(oldSongId, newSongId, oldSecondSongId, newSecondSongId, oldPlayedByOrch, playedByOrch);
     }
 
@@ -187,8 +279,52 @@ public static class BGMManager
         Stop();
     }
 
-    public static bool DeepDungeonModeActive()
+    public static bool DeepDungeonModeActive() => _ddPlaylist != null;
+
+    // =========================================================
+    // External/local playback silencing (used by LocalPlaybackHooks)
+    // =========================================================
+
+    /// <summary>
+    /// Force the in-game BGM to the silent track (ID 1) while an external/local player is active.
+    /// Safe to call multiple times; requires matching EndExternalSilence calls.
+    /// </summary>
+    public static void BeginExternalSilence()
     {
-        return _ddPlaylist != null;
+        _externalSilenceDepth++;
+        if (_silencedViaExternal) return;
+
+        _silencedViaExternal = true;
+
+        // If we're not already forcing silence, do so now.
+        if (PlayingSongId != 1 || !_isPlayingReplacement)
+            Play(1, isReplacement: true);
+    }
+
+    /// <summary>
+    /// Release the forced silence started by <see cref="BeginExternalSilence"/>.
+    /// When the depth reaches zero, Orchestrion stops forcing a song so the game’s current BGM is audible again.
+    /// </summary>
+    public static void EndExternalSilence()
+    {
+        if (_externalSilenceDepth > 0)
+            _externalSilenceDepth--;
+
+        if (_externalSilenceDepth > 0) return;
+        if (!_silencedViaExternal) return;
+
+        _silencedViaExternal = false;
+
+        // If we were enforcing silence via replacement, stop forcing any song.
+        if (PlayingSongId == 1 && _isPlayingReplacement)
+        {
+            var oldSongId = CurrentAudibleSong;
+            var second = _bgmController.SecondSongId;
+
+            // Notify and release control so the game's own BGM comes through.
+            InvokeSongChanged(oldSongId, _bgmController.CurrentSongId, second, second, oldPlayedByOrch: true, playedByOrch: false);
+            _bgmController.SetSong(0);
+            _isPlayingReplacement = false;
+        }
     }
 }
