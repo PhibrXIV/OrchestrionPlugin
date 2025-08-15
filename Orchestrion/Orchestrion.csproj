@@ -4,9 +4,9 @@
   </PropertyGroup>
   
   <PropertyGroup>
-    <AssemblyName>orchestrion</AssemblyName>
-    <AssemblyTitle>orchestrion</AssemblyTitle>
-    <Product>orchestrion</Product>
+    <AssemblyName>Orchestrion</AssemblyName>
+    <AssemblyTitle>Orchestrion</AssemblyTitle>
+    <Product>Orchestrion</Product>
     <Authors>Meli, perchbird</Authors>
     <Copyright>Copyright ©  2021</Copyright>
     <OutputPath>bin\$(Configuration)\</OutputPath>
@@ -87,7 +87,13 @@
     <None Remove="Loc\zh.json" />
     <EmbeddedResource Include="Loc\zh.json" />
   </ItemGroup>
-  
+  <ItemGroup>
+  <ContentWithTargetPath Include="Orchestrion.json">
+    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    <TargetPath>Orchestrion.json</TargetPath>
+  </ContentWithTargetPath>
+</ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="NAudio" Version="2.2.1" />
   </ItemGroup>

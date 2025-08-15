@@ -17,7 +17,7 @@ jobs:
       build_configuration: Release
       personal_plugin_repo: PhibrXIV/DalamudPluginRepo
       personal_plugin_repo_branch: master
-      plugin_folder: orchestrion
+      plugin_folder: OrchestrionPlugin
       project_dir: Orchestrion
       platform: x64
     secrets:
