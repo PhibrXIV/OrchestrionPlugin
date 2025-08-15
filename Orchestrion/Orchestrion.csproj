@@ -1,6 +1,6 @@
 <Project Sdk="Dalamud.NET.Sdk/13.0.0">
   <PropertyGroup>
-    <PluginVersion>2.2.0.15</PluginVersion>
+    <PluginVersion>2.2.0.16</PluginVersion>
   </PropertyGroup>
   <PropertyGroup>
     <AssemblyName>OrchestrionPlus</AssemblyName>
@@ -16,6 +16,8 @@
     <Version>$(PluginVersion)</Version>
     <FileVersion>$(PluginVersion)</FileVersion>
     <AssemblyVersion>$(PluginVersion)</AssemblyVersion>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+
   </PropertyGroup>
   
 <PropertyGroup>
@@ -86,27 +88,14 @@
     <None Remove="Loc\zh.json" />
     <EmbeddedResource Include="Loc\zh.json" />
   </ItemGroup>
+
   <ItemGroup>
   <ContentWithTargetPath Include="OrchestrionPlus.json">
     <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     <TargetPath>OrchestrionPlus.json</TargetPath>
   </ContentWithTargetPath>
 </ItemGroup>
-<PropertyGroup>
-  <!-- Ensures NuGet deps are copied to the output root -->
-  <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-  <ItemGroup>
-  <!-- All NAudio satellites that your build produced -->
-  <NAudioAssemblies Include="$(OutputPath)NAudio*.dll" />
-</ItemGroup>
-<Target Name="CopyDepsToPluginDir" AfterTargets="Build">
-  <!-- The folder DalamudPackager zips (contains your manifest + dll) -->
-  <MakeDir Directories="$(OutputPath)$(AssemblyName)\" />
-  <Copy SourceFiles="@(NAudioAssemblies)"
-        DestinationFolder="$(OutputPath)$(AssemblyName)\"
-        SkipUnchangedFiles="true" />
-</Target>
-</PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="NAudio" Version="2.2.1" />
   </ItemGroup>
