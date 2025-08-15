@@ -92,7 +92,21 @@
     <TargetPath>OrchestrionPlus.json</TargetPath>
   </ContentWithTargetPath>
 </ItemGroup>
-
+<PropertyGroup>
+  <!-- Ensures NuGet deps are copied to the output root -->
+  <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+  <ItemGroup>
+  <!-- All NAudio satellites that your build produced -->
+  <NAudioAssemblies Include="$(OutputPath)NAudio*.dll" />
+</ItemGroup>
+<Target Name="CopyDepsToPluginDir" AfterTargets="Build">
+  <!-- The folder DalamudPackager zips (contains your manifest + dll) -->
+  <MakeDir Directories="$(OutputPath)$(AssemblyName)\" />
+  <Copy SourceFiles="@(NAudioAssemblies)"
+        DestinationFolder="$(OutputPath)$(AssemblyName)\"
+        SkipUnchangedFiles="true" />
+</Target>
+</PropertyGroup>
   <ItemGroup>
     <PackageReference Include="NAudio" Version="2.2.1" />
   </ItemGroup>
