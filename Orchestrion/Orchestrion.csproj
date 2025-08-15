@@ -1,6 +1,6 @@
 <Project Sdk="Dalamud.NET.Sdk/13.0.0">
   <PropertyGroup>
-    <PluginVersion>2.2.0.18</PluginVersion>
+    <PluginVersion>2.2.0.19</PluginVersion>
   </PropertyGroup>
   <PropertyGroup>
     <AssemblyName>OrchestrionPlus</AssemblyName>
