@@ -7,9 +7,7 @@
       ProjectDir="$(ProjectDir)"
       ManifestType="json"
       MakeZip="true"
-      Include="$(AssemblyName).dll;
-               $(AssemblyName).pdb;
-               xiv_bgm_en.csv;
+      Include="xiv_bgm_en.csv;
                xiv_bgm_de.csv;
                xiv_bgm_fr.csv;
                xiv_bgm_ja.csv;
