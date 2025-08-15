@@ -5,7 +5,7 @@
                 AssemblyName="$(AssemblyName)"
                 OutputPath="$(OutputPath)"
                 ProjectDir="$(ProjectDir)"
-                ManifestType="yaml"
+                ManifestType="json"
                 MakeZip="true"
                 Include="orchestrion.dll;
                         orchestrion.pdb;
