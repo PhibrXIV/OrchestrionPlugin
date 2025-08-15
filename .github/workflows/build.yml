@@ -22,3 +22,20 @@ jobs:
       platform: x64
     secrets:
       PAT: ${{ secrets.PAT }}
+
+  regenerate_pluginmaster:
+    name: Trigger PluginMaster Regeneration
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch regenerate.yml in Plugin Repo
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PAT }}
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: 'PhibrXIV',
+              repo: 'DalamudPluginRepo',
+              workflow_id: 'regenerate.yml',   // filename under .github/workflows
+              ref: 'master'
+            });
