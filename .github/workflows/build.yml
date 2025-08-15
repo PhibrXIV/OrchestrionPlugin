@@ -1,4 +1,4 @@
-﻿name: Create Release and Update Repository
+﻿name: Create Release and Update Repo
 
 on:
   push:
