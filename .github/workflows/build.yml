@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   release:
-    uses: ./.github/workflows/reusable_create_release.yml
+    uses: PhibrXIV/DalamudPluginRepo/.github/workflows/reusable_create_release.yml@master
     with:
       internal_name: OrchestrionPlugin
       solution_name: Orchestrion
@@ -20,4 +20,5 @@ jobs:
       plugin_folder: orchestrion
       project_dir: Orchestrion
       platform: x64
-    secrets: inherit
+    secrets:
+      PAT: ${{ secrets.PAT }}
