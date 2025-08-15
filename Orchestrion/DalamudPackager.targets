@@ -15,6 +15,6 @@
                xiv_bgm_ja.csv;
                xiv_bgm_zh.csv;
                xiv_bgm_metadata.csv;
-               Orchestrion.json"/>
+               OrchestrionPlus.json"/>
   </Target>
 </Project>
