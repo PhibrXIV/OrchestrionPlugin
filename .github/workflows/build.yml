@@ -10,10 +10,11 @@ env:
   PUBLIC_NAME: OrchestrionPlugin
   SOLUTION_NAME: Orchestrion
   INTERNAL_NAME: OrchestrionPlugin
+  CONFIGURATION: Release
+  PLATFORM: x64
   RELEASE_DIR: Orchestrion\bin\Release\x64\
   PERSONAL_PLUGIN_REPO: PhibrXIV/DalamudPluginRepo
   DOTNET_CLI_TELEMETRY_OPTOUT: true
-  CONFIGURATION: Release
 
 jobs:
   build:
@@ -21,55 +22,53 @@ jobs:
     runs-on: windows-2022
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           submodules: recursive
 
       - name: Extract Branch
         id: extract_branch
+        shell: pwsh
         run: |
           $branch_name = 'main'
           $commit_messages = @'
           ${{ toJSON(github.event.commits) }}
           '@
-          
           $commit_messages = $commit_messages | ConvertFrom-Json
-          
           foreach ($commit in $commit_messages) {
-              if ($commit.message -match 'build\(([^)]+)\):') {
-                  $branch_name = $matches[1]
-                  break
-              }
+            if ($commit.message -match 'build\(([^)]+)\):') {
+              $branch_name = $matches[1]
+              break
+            }
           }
-
-          echo "branch_name=$branch_name" >> $env:GITHUB_OUTPUT
+          "branch_name=$branch_name" >> $env:GITHUB_OUTPUT
 
       - name: Setup MSBuild
-        uses: microsoft/setup-msbuild@v1.0.2
+        uses: microsoft/setup-msbuild@v2
 
       - name: Download Dalamud
+        shell: pwsh
         run: |
           $branch_name = '${{ steps.extract_branch.outputs.branch_name }}'
-
           if ($branch_name -eq 'main') {
             $url = 'https://goatcorp.github.io/dalamud-distrib/latest.zip'
           } else {
             $url = "https://goatcorp.github.io/dalamud-distrib/$branch_name/latest.zip"
           }
-          
           Invoke-WebRequest -Uri $url -OutFile latest.zip
           Expand-Archive -Force latest.zip "$env:AppData\XIVLauncher\addon\Hooks\dev\"
 
+      - name: Restore
+        run: dotnet restore -r win-x64 ${{ env.SOLUTION_NAME }}.sln
+
       - name: Build
-        run: |
-          dotnet restore -r win ${{ env.SOLUTION_NAME }}.sln
-          dotnet build --configuration Release
+        run: dotnet build ${{ env.SOLUTION_NAME }}.sln -c ${{ env.CONFIGURATION }} -p:Platform=${{ env.PLATFORM }}
 
       - name: Test
-        run: |
-          dotnet test --no-restore --verbosity normal
+        run: dotnet test ${{ env.SOLUTION_NAME }}.sln -c ${{ env.CONFIGURATION }} -p:Platform=${{ env.PLATFORM }} --no-build
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
           name: PluginRepoZip
           path: ${{ env.RELEASE_DIR }}
@@ -80,17 +79,20 @@ jobs:
     if: ${{ contains(toJSON(github.event.commits.*.message), 'build:') || contains(toJSON(github.event.commits.*.message), 'build(')}}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout plugin repo
+        uses: actions/checkout@v4
         with:
           repository: ${{ env.PERSONAL_PLUGIN_REPO }}
           token: ${{ secrets.PAT }}
 
-      - uses: actions/download-artifact@v4.1.7
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
         with:
           name: PluginRepoZip
           path: plugins/${{ env.INTERNAL_NAME }}
 
-      - uses: EndBug/add-and-commit@v7
+      - name: Commit and push
+        uses: EndBug/add-and-commit@v7
         with:
           add: --all
           author_name: GitHub Action
