@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - master
+      - main
 
 env:
   PUBLIC_NAME: OrchestrionPlugin
@@ -27,7 +27,7 @@ jobs:
       - name: Extract Branch
         id: extract_branch
         run: |
-          $branch_name = 'master'
+          $branch_name = 'main'
           $commit_messages = @'
           ${{ toJSON(github.event.commits) }}
           '@
@@ -50,7 +50,7 @@ jobs:
         run: |
           $branch_name = '${{ steps.extract_branch.outputs.branch_name }}'
 
-          if ($branch_name -eq 'master') {
+          if ($branch_name -eq 'main') {
             $url = 'https://goatcorp.github.io/dalamud-distrib/latest.zip'
           } else {
             $url = "https://goatcorp.github.io/dalamud-distrib/$branch_name/latest.zip"
