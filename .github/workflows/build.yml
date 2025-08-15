@@ -74,7 +74,6 @@ jobs:
           path: ${{ env.RELEASE_DIR }}
           if-no-files-found: error
 
-
   deploy:
     needs: build
     if: ${{ contains(toJSON(github.event.commits.*.message), 'build:') || contains(toJSON(github.event.commits.*.message), 'build(')}}
