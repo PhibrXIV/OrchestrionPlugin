@@ -93,9 +93,7 @@
     <TargetPath>Orchestrion.json</TargetPath>
   </ContentWithTargetPath>
 </ItemGroup>
-<ItemGroup>
-  <PackageReference Include="DalamudPackager" Version="13.0.0" PrivateAssets="all" />
-</ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="NAudio" Version="2.2.1" />
   </ItemGroup>
