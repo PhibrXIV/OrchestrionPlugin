@@ -2,7 +2,9 @@
   <PropertyGroup>
     <PluginVersion>2.2.0.15</PluginVersion>
   </PropertyGroup>
-  
+    <PropertyGroup>   
+      <DalamudPluginManifest>OrchestrionPlus.json</DalamudPluginManifest> 
+    </PropertyGroup>
   <PropertyGroup>
     <AssemblyName>Orchestrion</AssemblyName>
     <AssemblyTitle>Orchestrion</AssemblyTitle>
