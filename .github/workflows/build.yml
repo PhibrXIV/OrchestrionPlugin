@@ -10,7 +10,7 @@ env:
   PUBLIC_NAME: OrchestrionPlugin
   SOLUTION_NAME: Orchestrion
   INTERNAL_NAME: OrchestrionPlugin
-  RELEASE_DIR: Orchestrion\bin\x64\Release\
+  RELEASE_DIR: Orchestrion\bin\Release\x64\
   PERSONAL_PLUGIN_REPO: PhibrXIV/DalamudPluginRepo
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
