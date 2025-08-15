@@ -88,9 +88,9 @@
     <EmbeddedResource Include="Loc\zh.json" />
   </ItemGroup>
   <ItemGroup>
-  <ContentWithTargetPath Include="Orchestrion.json">
+  <ContentWithTargetPath Include="OrchestrionPlus.json">
     <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    <TargetPath>Orchestrion.json</TargetPath>
+    <TargetPath>OrchestrionPlus.json</TargetPath>
   </ContentWithTargetPath>
 </ItemGroup>
 
