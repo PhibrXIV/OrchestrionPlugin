@@ -2,13 +2,10 @@
   <PropertyGroup>
     <PluginVersion>2.2.0.15</PluginVersion>
   </PropertyGroup>
-    <PropertyGroup>   
-      <DalamudPluginManifest>OrchestrionPlus.json</DalamudPluginManifest> 
-    </PropertyGroup>
   <PropertyGroup>
-    <AssemblyName>Orchestrion</AssemblyName>
-    <AssemblyTitle>Orchestrion</AssemblyTitle>
-    <Product>Orchestrion</Product>
+    <AssemblyName>OrchestrionPlus</AssemblyName>
+    <AssemblyTitle>OrchestrionPlus</AssemblyTitle>
+    <Product>OrchestrionPlus</Product>
     <Authors>Meli, perchbird</Authors>
     <Copyright>Copyright ©  2021</Copyright>
     <OutputPath>bin\$(Configuration)\</OutputPath>
