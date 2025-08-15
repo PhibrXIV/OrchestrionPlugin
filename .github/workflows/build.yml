@@ -12,7 +12,7 @@ env:
   INTERNAL_NAME: OrchestrionPlugin
   CONFIGURATION: Release
   PLATFORM: x64
-  RELEASE_DIR: Orchestrion\bin\Release\x64\
+  RELEASE_DIR: Orchestrion\bin\Release\x64\orchestrion
   PERSONAL_PLUGIN_REPO: PhibrXIV/DalamudPluginRepo
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
@@ -60,20 +60,11 @@ jobs:
       - name: Test
         run: dotnet test ${{ env.SOLUTION_NAME }}.sln -c ${{ env.CONFIGURATION }} -p:Platform=${{ env.PLATFORM }} --no-build
 
-      - name: Package latest.zip
-        shell: pwsh
-        run: |
-          $src = Join-Path $env:RELEASE_DIR '*'
-          $dst = Join-Path $env:RELEASE_DIR 'latest.zip'
-          if (Test-Path $dst) { Remove-Item $dst -Force }
-          Compress-Archive -Path $src -DestinationPath $dst
-
-      # Upload the ZIP file only (not the whole folder)
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: PluginRepoZip
-          path: ${{ env.RELEASE_DIR }}latest.zip
+          path: ${{ env.RELEASE_DIR }}
           if-no-files-found: error
 
   deploy:
@@ -88,11 +79,6 @@ jobs:
           token: ${{ secrets.PAT }}
           ref: master
           fetch-depth: 0
-
-      - name: Clean plugin folder
-        run: |
-          mkdir -p "plugins/${{ env.INTERNAL_NAME }}"
-          rm -rf "plugins/${{ env.INTERNAL_NAME }}"/*
 
       - name: Download build artifact
         uses: actions/download-artifact@v4
