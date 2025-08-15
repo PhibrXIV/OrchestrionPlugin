@@ -6,16 +6,6 @@
       OutputPath="$(OutputPath)"
       ProjectDir="$(ProjectDir)"
       ManifestType="json"
-      MakeZip="true"
-    Include="$(AssemblyName).dll;
-               $(AssemblyName).pdb;
-               *.dll;
-               xiv_bgm_en.csv;
-               xiv_bgm_de.csv;
-               xiv_bgm_fr.csv;
-               xiv_bgm_ja.csv;
-               xiv_bgm_zh.csv;
-               xiv_bgm_metadata.csv;
-               OrchestrionPlus.json"/>
+      MakeZip="true"/>
   </Target>
 </Project>
