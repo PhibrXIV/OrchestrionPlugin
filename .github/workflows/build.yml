@@ -12,12 +12,12 @@ jobs:
   release:
     uses: PhibrXIV/DalamudPluginRepo/.github/workflows/reusable_create_release.yml@master
     with:
-      internal_name: OrchestrionPlugin
+      internal_name: Orchestrion
       solution_name: Orchestrion
       build_configuration: Release
       personal_plugin_repo: PhibrXIV/DalamudPluginRepo
       personal_plugin_repo_branch: master
-      plugin_folder: OrchestrionPlugin
+      plugin_folder: Orchestrion
       project_dir: Orchestrion
       platform: x64
     secrets:
