@@ -16,12 +16,19 @@ public partial class MainWindow
 		if (ImGui.IsItemClicked(ImGuiMouseButton.Left))
 			ImGui.SetClipboardText(addrStr);
 		ImGui.Text($"streaming enabled: {BGMAddressResolver.StreamingEnabled}");
-		ImGui.Text($"PlayingScene: {BGMManager.PlayingScene}");
+		
+		ImGui.Text($"OldSongId: {BGMManager.OldSongId}");
+		ImGui.Text($"OldScene: {BGMManager.OldScene}");
+		
+		ImGui.Text($"CurrentSongId: {BGMManager.CurrentSongId}");
+		ImGui.Text($"CurrentScene: {BGMManager.CurrentScene}");
+		
+		ImGui.Text($"SecondSongId: {BGMManager.SecondSongId}");
+		ImGui.Text($"SecondScene: {BGMManager.SecondScene}");
+
 		ImGui.Text($"PlayingSongId: {BGMManager.PlayingSongId}");
-		// ImGui.Text($"OldScene: {BGMManager.OldScene}");
-		// ImGui.Text($"OldSongId: {BGMManager.OldSongId}");
-		// ImGui.Text($"OldSecondScene: {BGMManager.OldSecondScene}");
-		// ImGui.Text($"OldSecondSongId: {BGMManager.OldSecondSongId}");
+		ImGui.Text($"PlayingScene: {BGMManager.PlayingScene}");
+
 		ImGui.Text($"Audible: {BGMManager.CurrentAudibleSong}");
 		if (ImGui.Button("export loc"))
 		{

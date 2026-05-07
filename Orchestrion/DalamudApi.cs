@@ -14,7 +14,7 @@ public class DalamudApi
     [PluginService] public static IChatGui ChatGui { get; private set; }
     [PluginService] public static IClientState ClientState { get; private set; }
     [PluginService] public static ICommandManager CommandManager { get; private set; }
-    // [PluginService] public static ICondition Condition { get; private set; }
+    [PluginService] public static ICondition Condition { get; private set; }
     [PluginService] public static IDalamudPluginInterface PluginInterface { get; private set; }
     [PluginService] public static IDataManager DataManager { get; private set; }
     [PluginService] public static IDtrBar DtrBar { get; private set; }

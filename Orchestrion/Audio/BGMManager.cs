@@ -1,4 +1,5 @@
 using CheapLoc;
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Plugin.Services;
 using Orchestrion.BGMSystem;
 using Orchestrion.InnSystem;
@@ -24,10 +25,19 @@ public static class BGMManager
     public static event InnSongPlayed OnInnSongPlayed;
     
     public static int CurrentSongId => _bgmController.CurrentSongId;
+    public static int CurrentScene => _bgmController.CurrentScene;
+    
+    public static int OldSongId => _bgmController.OldSongId;
+    public static int OldScene => _bgmController.OldScene;
+    
     public static int PlayingSongId => _bgmController.PlayingSongId;
-    public static int CurrentAudibleSong => _bgmController.CurrentAudibleSong;
     public static int PlayingScene => _bgmController.PlayingScene;
     
+    public static int SecondSongId => _bgmController.SecondSongId;
+    public static int SecondScene => _bgmController.SecondScene;
+    
+    public static int CurrentAudibleSong => _bgmController.CurrentAudibleSong;
+
     static BGMManager()
     {
         _bgmController = new BGMController();
@@ -82,7 +92,7 @@ public static class BGMManager
     {
         // Estate orchestrions play over BGM, so trying to handle BGM now is useless
         if (InnMusicActive()) return;
-
+        
         var currentChanged = oldSong != newSong;
         var secondChanged = oldSecondSong != newSecondSong;
         
@@ -134,7 +144,7 @@ public static class BGMManager
                 if (toPlay == SongReplacementEntry.NoChangeId) return; // give up
             }    
         }
-            
+        
         if (newSongReplacement.ReplacementId == SongReplacementEntry.NoChangeId && PlayingSongId == 0)
         {
             toPlay = oldSong; // no net BGM change
@@ -151,6 +161,14 @@ public static class BGMManager
     {
         // Estate orchestrions play over BGM, so trying to play BGM now is useless
         if (InnMusicActive()) return;
+        
+        // Don't play anything if we're in a cutscene and the setting is off
+        var inCutscene = DalamudApi.Condition[ConditionFlag.OccupiedInCutSceneEvent];
+        if (Configuration.Instance.DisableInCutscenes && inCutscene && isReplacement)
+        {
+            DalamudApi.PluginLog.Debug($"[Play] Not playing {songId} due to cutscene setting");
+            return;
+        }
 
         var wasPlaying = PlayingSongId != 0;
         var oldSongId = CurrentAudibleSong;

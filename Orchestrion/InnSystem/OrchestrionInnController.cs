@@ -1,26 +1,26 @@
 using System.Threading;
+using FFXIVClientStructs.FFXIV.Client.Game;
 using Orchestrion.Persistence;
 
 namespace Orchestrion.InnSystem;
 
 internal class OrchestrionInnController
 {
-    private readonly OrchestrionInnAddressResolver InnAddressResolver = new OrchestrionInnAddressResolver();
-    private readonly Lock InnTrackDataAccessLock = new Lock();
+    private readonly Lock _innTrackDataAccessLock = new();
 
-    private OrchestrionInnPlaybackMode NewInnPlaybackMode = OrchestrionInnPlaybackMode.None;
-    private OrchestrionInnPlaybackState NewInnPlaybackState = OrchestrionInnPlaybackState.None;
-    private uint NewInnSamplingTrackId = 0;
-    private uint NewInnPlayingTrackId = 0;
-    private string NewInnTrackDtrName = string.Empty;
-    private string NewInnTrackChatName = string.Empty;
+    private OrchestrionPlayMode _newInnPlayMode = OrchestrionPlayMode.PlayAll;
+    private OrchestrionMode _newInnMode = OrchestrionMode.Off;
+    private uint _newInnSamplingTrackId;
+    private uint _newInnPlayingTrackId;
+    private string _newInnTrackDtrName = string.Empty;
+    private string _newInnTrackChatName = string.Empty;
 
-    private OrchestrionInnPlaybackMode OldInnPlaybackMode = OrchestrionInnPlaybackMode.None;
-    private OrchestrionInnPlaybackState OldInnPlaybackState = OrchestrionInnPlaybackState.None;
-    private uint OldInnSamplingTrackId = 0;
-    private uint OldInnPlayingTrackId = 0;
-    private string OldInnTrackDtrName = string.Empty;
-    private string OldInnTrackChatName = string.Empty;
+    private OrchestrionPlayMode _oldPlayMode = OrchestrionPlayMode.PlayAll;
+    private OrchestrionMode _oldInnMode = OrchestrionMode.Off;
+    private uint _oldInnSamplingTrackId;
+    private uint _oldInnPlayingTrackId;
+    private string _oldInnTrackDtrName = string.Empty;
+    private string _oldInnTrackChatName = string.Empty;
 
     internal delegate void InnPlayingSongChangedHandler(
         uint oldPlayingTrackId, uint newPlayingTrackId,
@@ -30,23 +30,20 @@ internal class OrchestrionInnController
 
     internal OrchestrionInnController()
     {
-        InnAddressResolver.Setup(DalamudApi.SigScanner);
         ResetAllFieldValues();
     }
 
-    internal bool IsInnTrackPlaying() => NewInnPlaybackState != OrchestrionInnPlaybackState.None;
-    internal bool IsInnTrackSampling() => NewInnPlaybackState == OrchestrionInnPlaybackState.Sampling;
+    internal bool IsInnTrackPlaying() => _newInnMode != OrchestrionMode.Off;
+    internal bool IsInnTrackSampling() => _newInnMode == OrchestrionMode.Sampling;
 
-    internal void Update()
+    internal unsafe void Update()
     {
-        lock (InnTrackDataAccessLock)
+        lock (_innTrackDataAccessLock)
         {
-            bool innTrackChanged = UpdateFieldValues();
+            var innTrackChanged = UpdateFieldValues();
 
             if (innTrackChanged)
-            {
                 HandleNewInnTrack();
-            }
 
             RecordOldFieldValues();
         }
@@ -54,18 +51,18 @@ internal class OrchestrionInnController
 
     private void HandleNewInnTrack()
     {
-        string ServerInfoLanguageCode = Configuration.Instance.ServerInfoLanguageCode;
-        string ChatLanguageCode = Configuration.Instance.ChatLanguageCode;
+        var serverInfoLanguageCode = Configuration.Instance.ServerInfoLanguageCode;
+        var chatLanguageCode = Configuration.Instance.ChatLanguageCode;
 
         if (IsInnTrackPlaying())
         {
-            NewInnTrackDtrName = GetInnTrackName(NewInnPlayingTrackId, ServerInfoLanguageCode);
-            NewInnTrackChatName = GetInnTrackName(NewInnPlayingTrackId, ChatLanguageCode);
+            _newInnTrackDtrName = GetInnTrackName(_newInnPlayingTrackId, serverInfoLanguageCode);
+            _newInnTrackChatName = GetInnTrackName(_newInnPlayingTrackId, chatLanguageCode);
         }
 
         OnPlayingSongChanged?.Invoke(
-            OldInnPlayingTrackId, NewInnPlayingTrackId,
-            OldInnTrackDtrName, NewInnTrackDtrName, NewInnTrackChatName
+            _oldInnPlayingTrackId, _newInnPlayingTrackId,
+            _oldInnTrackDtrName, _newInnTrackDtrName, _newInnTrackChatName
         );
     }
 
@@ -87,43 +84,46 @@ internal class OrchestrionInnController
             ).GetRow(trackId).Name.ToString();
         }
 
-        return innTrackName;
+        return $"{{{innTrackName}}}";
     }
 
-    private bool UpdateFieldValues()
+    private unsafe bool UpdateFieldValues()
     {
-        NewInnPlaybackMode = InnAddressResolver.GetInnPlaybackMode();
-        NewInnPlaybackState = InnAddressResolver.GetInnPlaybackState();
-        NewInnPlayingTrackId = IsInnTrackPlaying() ? InnAddressResolver.GetInnPlayingTrackId() : OldInnPlayingTrackId;
-        NewInnSamplingTrackId = IsInnTrackSampling() ? InnAddressResolver.GetInnSamplingTrackId() : OldInnSamplingTrackId;
+        var manager = OrchestrionManager.Instance();
+        var sampleState = OrchestrionSampleState.Instance();
 
-        if (OldInnPlaybackState != OrchestrionInnPlaybackState.None && NewInnPlaybackState == OrchestrionInnPlaybackState.None)
+        _newInnPlayMode = manager->PlayMode;
+        _newInnMode = manager->Mode;
+        _newInnPlayingTrackId = IsInnTrackPlaying() ? manager->TrackId : _oldInnPlayingTrackId;
+        _newInnSamplingTrackId = IsInnTrackSampling() ? sampleState->TrackId : _oldInnSamplingTrackId;
+
+        if (_oldInnMode != OrchestrionMode.Off && _newInnMode == OrchestrionMode.Off)
         {
             ResetNewFieldValues();
         }
 
-        bool innTrackChanged = NewInnPlayingTrackId != OldInnPlayingTrackId;
+        var innTrackChanged = _newInnPlayingTrackId != _oldInnPlayingTrackId;
         return innTrackChanged;
     }
 
     private void ResetNewFieldValues()
     {
-        NewInnPlaybackMode = OrchestrionInnPlaybackMode.None;
-        NewInnPlaybackState = OrchestrionInnPlaybackState.None;
-        NewInnSamplingTrackId = 0;
-        NewInnPlayingTrackId = 0;
-        NewInnTrackDtrName = string.Empty;
-        NewInnTrackChatName = string.Empty;
+        _newInnPlayMode = OrchestrionPlayMode.PlayAll;
+        _newInnMode = OrchestrionMode.Off;
+        _newInnSamplingTrackId = 0;
+        _newInnPlayingTrackId = 0;
+        _newInnTrackDtrName = string.Empty;
+        _newInnTrackChatName = string.Empty;
     }
 
     private void ResetOldFieldValues()
     {
-        OldInnPlaybackMode = OrchestrionInnPlaybackMode.None;
-        OldInnPlaybackState = OrchestrionInnPlaybackState.None;
-        OldInnSamplingTrackId = 0;
-        OldInnPlayingTrackId = 0;
-        OldInnTrackDtrName = string.Empty;
-        OldInnTrackChatName = string.Empty;
+        _oldPlayMode = OrchestrionPlayMode.PlayAll;
+        _oldInnMode = OrchestrionMode.Off;
+        _oldInnSamplingTrackId = 0;
+        _oldInnPlayingTrackId = 0;
+        _oldInnTrackDtrName = string.Empty;
+        _oldInnTrackChatName = string.Empty;
     }
 
     private void ResetAllFieldValues()
@@ -134,11 +134,11 @@ internal class OrchestrionInnController
 
     private void RecordOldFieldValues()
     {
-        OldInnPlaybackMode = NewInnPlaybackMode;
-        OldInnPlaybackState = NewInnPlaybackState;
-        OldInnSamplingTrackId = NewInnSamplingTrackId;
-        OldInnPlayingTrackId = NewInnPlayingTrackId;
-        OldInnTrackDtrName = NewInnTrackDtrName;
-        OldInnTrackChatName = NewInnTrackChatName;
+        _oldPlayMode = _newInnPlayMode;
+        _oldInnMode = _newInnMode;
+        _oldInnSamplingTrackId = _newInnSamplingTrackId;
+        _oldInnPlayingTrackId = _newInnPlayingTrackId;
+        _oldInnTrackDtrName = _newInnTrackDtrName;
+        _oldInnTrackChatName = _newInnTrackChatName;
     }
 }

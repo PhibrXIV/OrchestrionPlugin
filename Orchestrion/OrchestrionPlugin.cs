@@ -4,10 +4,12 @@ using System.Linq;
 using System.Reflection;
 using CheapLoc;
 using Dalamud;
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.Command;
 using Dalamud.Game.Gui.Dtr;
 using Dalamud.Game.Text;
 using Dalamud.Game.Text.SeStringHandling;
+using Dalamud.Hooking;
 using Dalamud.Interface;
 using Dalamud.Interface.GameFonts;
 using Dalamud.Interface.ManagedFontAtlas;
@@ -15,18 +17,18 @@ using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Dalamud.Utility;
+using FFXIVClientStructs.FFXIV.Client.UI.Misc;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using Orchestrion.Audio;
 using Orchestrion.BGMSystem;
 using Orchestrion.Persistence;
 using Orchestrion.UI.Windows;
-
 using MainWindow = Orchestrion.UI.Windows.MainWindow.MainWindow;
 
 namespace Orchestrion;
 
 // ReSharper disable once ClassNeverInstantiated.Global
-public class OrchestrionPlugin : IDalamudPlugin, IDisposable
+public unsafe class OrchestrionPlugin : IDalamudPlugin
 {
 	private const string ConstName = "Orchestrion";
 	private const string CommandName = "/porch";
@@ -42,9 +44,10 @@ public class OrchestrionPlugin : IDalamudPlugin, IDisposable
 	private readonly MainWindow _mainWindow;
 	private readonly SettingsWindow _settingsWindow;
 
-	private IDtrBarEntry _dtrEntry;
-
+	private readonly IDtrBarEntry _dtrEntry;
+	private readonly Hook<RaptureLogModule.Delegates.ShowLogMessageUInt> _logMessageHook;
 	private SeString _songEchoMsg;
+	private bool _inCutscene;
 
 	public OrchestrionPlugin(IDalamudPluginInterface pi)
 	{
@@ -78,8 +81,12 @@ public class OrchestrionPlugin : IDalamudPlugin, IDisposable
 
 		DalamudApi.Framework.Update += OrchestrionUpdate;
 		DalamudApi.ClientState.Logout += ClientStateOnLogout;
-		
 		DalamudApi.PluginInterface.LanguageChanged += LanguageChanged;
+		
+		_logMessageHook = DalamudApi.Hooks.HookFromAddress<RaptureLogModule.Delegates.ShowLogMessageUInt>(
+			RaptureLogModule.Addresses.ShowLogMessageUInt.Value, 
+			OnLogMessage);
+		_logMessageHook.Enable();
 		
 		var atlas = DalamudApi.PluginInterface.UiBuilder.FontAtlas;
 		CnFont = atlas.NewDelegateFontHandle(e => e.OnPreBuild(tk => {
@@ -93,7 +100,7 @@ public class OrchestrionPlugin : IDalamudPlugin, IDisposable
 					.Concat(Enumerable.Range(1, 127).Select(x => (char)x))
 					.ToGlyphRange(),
 			};
-			tk.Font = tk.AddDalamudAssetFont(DalamudAsset.NotoSansJpMedium, config);
+			tk.Font = tk.AddDalamudAssetFont(DalamudAsset.NotoSansCjkMedium, config);
 		}));
 		if (CnFont.LoadException != null)
 		{
@@ -124,6 +131,7 @@ public class OrchestrionPlugin : IDalamudPlugin, IDisposable
 		BGMManager.OnInnSongPlayed -= UpdateInnSongInfo;
 		BGMManager.OnSongChanged -= OnSongChanged;
 
+		_logMessageHook.Dispose();
 		PlaylistManager.Dispose();
 		BGMManager.Dispose();
 
@@ -143,6 +151,7 @@ public class OrchestrionPlugin : IDalamudPlugin, IDisposable
 
 	private void OrchestrionUpdate(IFramework ignored)
 	{
+		UpdateForCutscene();
 		PerformEcho();
 		CheckDtr();
 		UpdateSettings();
@@ -151,7 +160,7 @@ public class OrchestrionPlugin : IDalamudPlugin, IDisposable
 	private void PerformEcho()
 	{
 		if (_songEchoMsg == null || IsLoadingScreen()) return;
-
+		
 		DalamudApi.ChatGui.Print(new XivChatEntry
 		{
 			Message = _songEchoMsg,
@@ -188,6 +197,19 @@ public class OrchestrionPlugin : IDalamudPlugin, IDisposable
 	private void ClientStateOnLogout(int type, int code)
 	{
 		BGMManager.Stop();
+	}
+	
+	private void UpdateForCutscene()
+	{
+		var oldInCutscene = _inCutscene;
+		_inCutscene = DalamudApi.Condition[ConditionFlag.OccupiedInCutSceneEvent];
+		
+		if (!Configuration.Instance.DisableInCutscenes) return;
+
+		if (_inCutscene && !oldInCutscene)
+		{
+			BGMManager.Stop();
+		}
 	}
 
 	private void OnSongChanged(int oldSong, int newSong, int oldSecondSong, int oldCurrentSong, bool oldPlayedByOrch, bool playedByOrch)
@@ -469,6 +491,15 @@ public class OrchestrionPlugin : IDalamudPlugin, IDisposable
 			if (!locEmpty && !infoEmpty)
 				_dtrEntry.Tooltip = $"{locations}\n{info}";	
 		}
+	}
+
+	// Hooks the LogMessage function with 1 UInt param to silence the game's Orchestrion furnishing message, ID 3433.
+	private void OnLogMessage(RaptureLogModule* thisPtr, uint logMessageId, uint value)
+	{
+		var suppress = logMessageId == 3433 && Configuration.Instance.DisableFurnishingMessages;
+		DalamudApi.PluginLog.Verbose($"[OnLogMessage] logMessageId: {logMessageId}, value: {value} suppress: {suppress}");
+		if (suppress) return;
+		_logMessageHook.Original(thisPtr, logMessageId, value);
 	}
 
 	private void UpdateChat(int songId, bool playedByOrch = false)

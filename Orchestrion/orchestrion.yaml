@@ -11,10 +11,10 @@ tags:
   - bgm
   - music
 changelog: |-
-  Update for 7.4.
-  Orchestrion (the plugin) can now report the titles of songs played inside housing instances by orchestrions (the furniture items).
+  Long-awaited new feature, implemented by @NPittinger!
+  The Orchestrion plugin can now report the titles of songs played inside housing instances and inns by the Orchestrion furnishing.
   Limitations:
-  - This plugin still cannot play Orchestrion rolls.
+  - The plugin still cannot play Orchestrion rolls.
   - Titles of songs played inside housing instances can appear in the server bar and in chat messages.
   - Songs played inside housing instances will not appear in your listening history and cannot be added to playlists.
-  - Titles of songs played inside housing instances currently only display in English or Japanese.
+  - Only English and Japanese titles are available for Orchestrion rolls, as those are the only languages provided by the game.
