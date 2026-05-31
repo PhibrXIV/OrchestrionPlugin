@@ -107,13 +107,10 @@ public static class BGMManager
         
         if (PlayingSongId != 0 && DeepDungeonModeActive())
         {
-            if (!string.IsNullOrEmpty(_ddPlaylist))
-            {
-                if (!Configuration.Instance.Playlists.ContainsKey(_ddPlaylist)) // user deleted playlist
-                    Stop();
-                else
-                    PlayRandomSong(_ddPlaylist);
-            }
+            if (!string.IsNullOrEmpty(_ddPlaylist) && !Configuration.Instance.Playlists.ContainsKey(_ddPlaylist)) // user deleted playlist
+                Stop();
+            else
+                PlayRandomSong(_ddPlaylist);
             return;
         }
 

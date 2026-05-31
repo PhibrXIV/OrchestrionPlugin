@@ -11,6 +11,9 @@ tags:
   - bgm
   - music
 changelog: |-
+  2.3.0.1:
+  Fixed bug where Deep Dungeon mode would not switch tracks
+  2.3.0.0:
   Long-awaited new feature, implemented by @NPittinger!
   The Orchestrion plugin can now report the titles of songs played inside housing instances and inns by the Orchestrion furnishing.
   Limitations:
