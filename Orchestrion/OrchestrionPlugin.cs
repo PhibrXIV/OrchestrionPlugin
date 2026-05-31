@@ -73,7 +73,7 @@ public unsafe class OrchestrionPlugin : IDalamudPlugin
 
 		DalamudApi.CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
 		{
-			HelpMessage = Loc.Localize("HelpMessage", "Displays the Orchestrion window, to view, change, or stop in-game BGM."),
+			HelpMessage = Loc.Localize("HelpMessage", "Displays the Orchestrion window, to view, change, or stop in-game BGM. Use '/porch help' for full command information."),
 		});
 
 		DalamudApi.PluginInterface.UiBuilder.Draw += _windowSystem.Draw;
