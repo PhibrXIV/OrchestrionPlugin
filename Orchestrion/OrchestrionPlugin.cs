@@ -1,19 +1,23 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.IO;
-using Dalamud.Game.Command;
-using Dalamud.Game.Text;
-using Dalamud.Plugin;
 using System.Linq;
 using System.Reflection;
 using CheapLoc;
 using Dalamud;
+using Dalamud.Game.ClientState.Conditions;
+using Dalamud.Game.Command;
 using Dalamud.Game.Gui.Dtr;
+using Dalamud.Game.Text;
 using Dalamud.Game.Text.SeStringHandling;
+using Dalamud.Hooking;
 using Dalamud.Interface;
 using Dalamud.Interface.GameFonts;
 using Dalamud.Interface.ManagedFontAtlas;
 using Dalamud.Interface.Windowing;
+using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using Dalamud.Utility;
+using FFXIVClientStructs.FFXIV.Client.UI.Misc;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using Orchestrion.Audio;
 using Orchestrion.BGMSystem;
@@ -24,7 +28,7 @@ using MainWindow = Orchestrion.UI.Windows.MainWindow.MainWindow;
 namespace Orchestrion;
 
 // ReSharper disable once ClassNeverInstantiated.Global
-public class OrchestrionPlugin : IDalamudPlugin
+public unsafe class OrchestrionPlugin : IDalamudPlugin
 {
     private const string ConstName = "Orchestrion";
     private const string CommandName = "/porch";
@@ -40,9 +44,10 @@ public class OrchestrionPlugin : IDalamudPlugin
     private readonly MainWindow _mainWindow;
     private readonly SettingsWindow _settingsWindow;
 
-    private IDtrBarEntry _dtrEntry;
-
-    private SeString _songEchoMsg;
+	private readonly IDtrBarEntry _dtrEntry;
+	private readonly Hook<RaptureLogModule.Delegates.ShowLogMessageUInt> _logMessageHook;
+	private SeString _songEchoMsg;
+	private bool _inCutscene;
 
     public OrchestrionPlugin(IDalamudPluginInterface pi)
     {

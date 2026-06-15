@@ -1,4 +1,5 @@
-﻿using CheapLoc;
+﻿using System.Numerics;
+using CheapLoc;
 using Dalamud.Bindings.ImGui;
 using Orchestrion.Audio;
 using Orchestrion.BGMSystem;
@@ -16,19 +17,30 @@ public partial class MainWindow
 		if (ImGui.IsItemClicked(ImGuiMouseButton.Left))
 			ImGui.SetClipboardText(addrStr);
 		ImGui.Text($"streaming enabled: {BGMAddressResolver.StreamingEnabled}");
-		ImGui.Text($"PlayingScene: {BGMManager.PlayingScene}");
+		ImGui.Separator();
+		ImGui.Text($"OldSongId: {BGMManager.OldSongId}");
+		ImGui.Text($"OldScene: {BGMManager.OldScene}");
+		ImGui.Dummy(new Vector2(10, 10));
+		ImGui.Text($"CurrentSongId: {BGMManager.CurrentSongId}");
+		ImGui.Text($"CurrentScene: {BGMManager.CurrentScene}");
+		ImGui.Dummy(new Vector2(10, 10));
+		ImGui.Text($"SecondSongId: {BGMManager.SecondSongId}");
+		ImGui.Text($"SecondScene: {BGMManager.SecondScene}");
+		ImGui.Dummy(new Vector2(10, 10));
 		ImGui.Text($"PlayingSongId: {BGMManager.PlayingSongId}");
-		// ImGui.Text($"OldScene: {BGMManager.OldScene}");
-		// ImGui.Text($"OldSongId: {BGMManager.OldSongId}");
-		// ImGui.Text($"OldSecondScene: {BGMManager.OldSecondScene}");
-		// ImGui.Text($"OldSecondSongId: {BGMManager.OldSecondSongId}");
+		ImGui.Text($"PlayingScene: {BGMManager.PlayingScene}");
+		ImGui.Dummy(new Vector2(10, 10));
 		ImGui.Text($"Audible: {BGMManager.CurrentAudibleSong}");
+		ImGui.Separator();
+		ImGui.Text($"Inn: {BGMManager.InnMusicActive()}");
+		ImGui.Separator();
+		ImGui.Text($"DD: {BGMManager.DeepDungeonModeActive()}");
+		ImGui.Separator();
 		if (ImGui.Button("export loc"))
 		{
 			Loc.ExportLocalizable(true);
 		}
-		ImGui.Text($"DD: {BGMManager.DeepDungeonModeActive()}");
-		// ImGui.Text($"DD playlist: {BGMManager._ddPlaylist}");
+		
 		
 	}
 }

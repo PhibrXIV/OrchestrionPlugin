@@ -1,10 +1,10 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Numerics;
-using Dalamud;
 using System.Reflection;
 using Dalamud.Interface;
 using Dalamud.Bindings.ImGui;
+using Lumina.Data;
 using Orchestrion.Persistence;
 using Orchestrion.Types;
 
@@ -18,6 +18,17 @@ public static class Util
 	public static string LangCodeToLanguage(string code)
 	{
 		return CultureInfo.GetCultureInfo(code).NativeName;
+	}
+
+	public static Language LangCodeToLuminaLanguage(string code)
+	{
+		return code switch
+		{
+			// Orchestrion song titles in the EXD sheets are currently only available in English and Japanese
+			"en" => Language.English,
+			"ja" => Language.Japanese,
+			_ => Language.English
+		};
 	}
 	
 	public static Vector2 GetIconSize(FontAwesomeIcon icon)

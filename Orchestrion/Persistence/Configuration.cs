@@ -32,7 +32,10 @@ public class Configuration : IPluginConfiguration
     public string ChatLanguageCode { get; set; } = "en";
     public XivChatType ChatType { get; set; } = DalamudApi.PluginInterface.GeneralChatType;
     public bool DisableTooltips { get; set; } = false;
-
+    public bool DisableFurnishingMessages { get; set; } = false;
+    public bool DisableInCutscenes { get; set; } = false;
+    public bool DisableReplacementsInCutscenes { get; set; } = false;
+    
     public string LastSelectedPlaylist { get; set; } = "Favorites";
 
     public Dictionary<int, SongReplacementEntry> SongReplacements { get; private set; } = new();

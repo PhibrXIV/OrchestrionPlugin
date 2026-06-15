@@ -86,7 +86,22 @@ public class SettingsWindow : Window
             "Show \"Now playing\" messages in game chat when the current song changes"), 
             () => Configuration.Instance.ShowSongInChat,
             b => Configuration.Instance.ShowSongInChat = b);
+        
+        Checkbox(Loc.Localize("SuppressFurnishingMessages",
+                "Suppress Orchestrion Furnishing \"{Song} is now playing\" chat messages"), 
+            () => Configuration.Instance.DisableFurnishingMessages,
+            b => Configuration.Instance.DisableFurnishingMessages = b);
 
+        Checkbox(Loc.Localize("StopInCutscenes",
+                "Stop the currently playing song when a cutscene begins"), 
+            () => Configuration.Instance.DisableInCutscenes,
+            b => Configuration.Instance.DisableInCutscenes = b);
+        
+        Checkbox(Loc.Localize("StopReplacementInCutscenes",
+                "Disable Orchestrion replacements during cutscenes"), 
+            () => Configuration.Instance.DisableReplacementsInCutscenes,
+            b => Configuration.Instance.DisableReplacementsInCutscenes = b);
+        
         Checkbox(Loc.Localize("ShowSongServerInfo",
             "Show current song in the \"server info\" UI element in-game"),
             () => Configuration.Instance.ShowSongInNative, 

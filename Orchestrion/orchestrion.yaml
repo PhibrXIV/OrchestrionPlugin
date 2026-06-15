@@ -1,0 +1,23 @@
+name: Orchestrion Plugin
+author: perchbird (originally Meli)
+description: |-
+  Orchestrion Plugin allows you to change the currently playing in-game BGM. It includes
+  a curated list of the most accurate in-game song titles, so you know exactly what's playing,
+  if you want to know later! Add favorite songs to separate them from the rest.
+  Note: This plugin does not currently allow you to play actual orchestrion songs.
+punchline: Adds a simple front-end for browsing and changing the in-game BGM. 
+repo_url: https://github.com/perchbirdd/OrchestrionPlugin
+tags:
+  - bgm
+  - music
+changelog: |-
+  2.3.0.1:
+  Fixed bug where Deep Dungeon mode would not switch tracks
+  2.3.0.0:
+  Long-awaited new feature, implemented by @NPittinger!
+  The Orchestrion plugin can now report the titles of songs played inside housing instances and inns by the Orchestrion furnishing.
+  Limitations:
+  - The plugin still cannot play Orchestrion rolls.
+  - Titles of songs played inside housing instances can appear in the server bar and in chat messages.
+  - Songs played inside housing instances will not appear in your listening history and cannot be added to playlists.
+  - Only English and Japanese titles are available for Orchestrion rolls, as those are the only languages provided by the game.

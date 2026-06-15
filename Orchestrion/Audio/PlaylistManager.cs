@@ -1,5 +1,4 @@
-﻿using System.Collections.Generic;
-using Dalamud.Logging;
+using System.Collections.Generic;
 using Dalamud.Plugin.Services;
 using Orchestrion.Persistence;
 using Orchestrion.Types;
@@ -9,7 +8,7 @@ namespace Orchestrion.Audio;
 public static class PlaylistManager
 {
 	public static bool IsPlaying { get; private set; }
-	public static Playlist CurrentPlaylist => Configuration.Instance.Playlists.GetValueOrDefault(_currentPlaylist, null);
+	public static Playlist? CurrentPlaylist => Configuration.Instance.Playlists.GetValueOrDefault(_currentPlaylist, null);
 	public static int CurrentSongId => CurrentPlaylist?.Songs[_currentSongIndex] ?? 0;
 	public static int CurrentSongIndex => _currentSongIndex;
 	public static Song CurrentSong => SongList.Instance.GetSong(CurrentPlaylist?.Songs[_currentSongIndex] ?? 0);
@@ -51,12 +50,14 @@ public static class PlaylistManager
 	
 	public static void Play(string playlistName)
 	{
+		if (BGMManager.InnMusicActive()) return;
 		Set(playlistName, -1, isPlaying: true);
 		Next();
 	}
 
 	public static void Play(string playlistName, int index)
 	{
+		if (BGMManager.InnMusicActive()) return;
 		Set(playlistName, index, isPlaying: true);
 		BGMManager.Play(CurrentPlaylist.Songs[index]);
 		_currentSongStartTime = Environment.TickCount64;

@@ -47,7 +47,7 @@ public class BGMController
     
     // The event that fires when the game changes songs.
     public delegate void SongChangedHandler(int oldSong, int currentSong, int oldSecondSong, int secondSong);
-    public SongChangedHandler OnSongChanged;
+    public event SongChangedHandler OnSongChanged;
     
     private unsafe delegate DisableRestart* AddDisableRestartIdPrototype(BGMScene* scene, ushort songId);
     private readonly AddDisableRestartIdPrototype _addDisableRestartId;
