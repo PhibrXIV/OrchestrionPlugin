@@ -15,7 +15,7 @@
   </PropertyGroup>
   
 <PropertyGroup>
-  <TargetFramework>net9.0-windows</TargetFramework>
+  <TargetFramework>net10.0-windows</TargetFramework>
   <Platforms>x64</Platforms>
   <PlatformTarget>x64</PlatformTarget>
   <OutputPath>bin\$(Configuration)\$(Platform)\</OutputPath>
@@ -88,25 +88,29 @@
     <TargetPath>OrchestrionPlus.json</TargetPath>
   </ContentWithTargetPath>
 </ItemGroup>
-<PropertyGroup>
-  <!-- Ensures NuGet deps are copied to the output root -->
-  <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-  <ItemGroup>
-  <!-- All NAudio satellites that your build produced -->
-  <NAudioAssemblies Include="$(OutputPath)NAudio*.dll" />
-</ItemGroup>
-<Target Name="CopyDepsToPluginDir" AfterTargets="Build">
-  <!-- The folder DalamudPackager zips (contains your manifest + dll) -->
-  <MakeDir Directories="$(OutputPath)$(AssemblyName)\" />
-  <Copy SourceFiles="@(NAudioAssemblies)"
-        DestinationFolder="$(OutputPath)$(AssemblyName)\"
-        SkipUnchangedFiles="true" />
-</Target>
-</PropertyGroup>
+	<PropertyGroup>
+		<!-- Ensures NuGet deps are copied to the output root -->
+		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+	</PropertyGroup>
+
+	<Target Name="CopyDepsToPluginDir" AfterTargets="Build">
+		<!-- All NAudio assemblies that your build produced -->
+		<ItemGroup>
+			<NAudioAssemblies Include="$(OutputPath)NAudio*.dll" />
+		</ItemGroup>
+
+		<!-- The folder DalamudPackager zips, containing your manifest + DLL -->
+		<MakeDir Directories="$(OutputPath)$(AssemblyName)\" />
+
+		<Copy
+		  SourceFiles="@(NAudioAssemblies)"
+		  DestinationFolder="$(OutputPath)$(AssemblyName)\"
+		  SkipUnchangedFiles="true"
+		  Condition="'@(NAudioAssemblies)' != ''" />
+	</Target>
   <ItemGroup>
     <PackageReference Include="NAudio" Version="2.2.1" />
   </ItemGroup>
-  
   <ItemGroup>
     <PackageReference Update="DalamudPackager" Version="15.0.0" />
   </ItemGroup>

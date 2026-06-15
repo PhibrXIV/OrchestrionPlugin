@@ -50,7 +50,6 @@ public static class BGMManager
     public static int SecondScene => _bgmController.SecondScene;
     
     public static int CurrentAudibleSong => _bgmController.CurrentAudibleSong;
-    public static int PlayingScene => _bgmController.PlayingScene;
 
     static BGMManager()
     {
@@ -60,7 +59,6 @@ public static class BGMManager
 
         DalamudApi.Framework.Update += Update;
         _bgmController.OnSongChanged += HandleSongChanged;
-        _innController.OnPlayingSongChanged += HandleInnSongChanged;
         OnSongChanged += IpcUpdate;
     }
 
@@ -69,7 +67,6 @@ public static class BGMManager
         DalamudApi.Framework.Update -= Update;
         Stop();
         OnSongChanged -= IpcUpdate;
-        _innController.OnPlayingSongChanged -= HandleInnSongChanged;
         _bgmController.OnSongChanged -= HandleSongChanged;
         _bgmController.Dispose();
     }
